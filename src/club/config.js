@@ -1,12 +1,12 @@
 // Parametri generali e dimensioni della sala del Mini-Z RC Club (in metri)
-export const VERSION = '1.2.0';
+export const VERSION = '1.2.1';
 
 // Colori delle 4 frequenze/canali dei piloti
 export const LANES = [
-  { d: -0.165, name: 'Rossa',  hex: '#e4242b', col: 0xe4242b, dark: '#7a1014' },
-  { d: -0.055, name: 'Bianca', hex: '#f4f4f6', col: 0xf4f4f6, dark: '#6a6e78' },
-  { d:  0.055, name: 'Verde',  hex: '#19a954', col: 0x19a954, dark: '#0d542a' },
-  { d:  0.165, name: 'Blu',    hex: '#1f7ae8', col: 0x1f7ae8, dark: '#0f3d78' },
+  { d: -0.165, name: 'Rossa',  css: '#e4242b', hex: '#e4242b', col: 0xe4242b, dark: '#7a1014' },
+  { d: -0.055, name: 'Bianca', css: '#f4f4f6', hex: '#f4f4f6', col: 0xf4f4f6, dark: '#6a6e78' },
+  { d:  0.055, name: 'Verde',  css: '#19a954', hex: '#19a954', col: 0x19a954, dark: '#0d542a' },
+  { d:  0.165, name: 'Blu',    css: '#1f7ae8', hex: '#1f7ae8', col: 0x1f7ae8, dark: '#0f3d78' },
 ];
 
 export const DRIVERS = [

@@ -118,22 +118,19 @@ export class ClubEnvironment {
   }
 
   createFoamNormalMap() {
-    const hCanvas = document.createElement('canvas');
-    hCanvas.width = 256;
-    hCanvas.height = 256;
-    const g = hCanvas.getContext('2d');
-    const r = rng(101);
-    g.fillStyle = '#808080';
-    g.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 14000; i++) {
-      const v = 110 + ((r() * 36) | 0);
-      g.fillStyle = `rgb(${v},${v},${v})`;
-      g.fillRect((r() * 256) | 0, (r() * 256) | 0, 2, 2);
-    }
-    g.strokeStyle = 'rgba(40,40,40,0.45)';
-    g.lineWidth = 2;
-    g.strokeRect(1, 1, 254, 254);
-    return normalFromHeight(hCanvas, 1.8, [22, 22]);
+    return normalFromHeight(256, 256, (g, w, h) => {
+      const r = rng(101);
+      g.fillStyle = '#808080';
+      g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 14000; i++) {
+        const v = 110 + ((r() * 36) | 0);
+        g.fillStyle = `rgb(${v},${v},${v})`;
+        g.fillRect((r() * w) | 0, (r() * h) | 0, 2, 2);
+      }
+      g.strokeStyle = 'rgba(40,40,40,0.45)';
+      g.lineWidth = 2;
+      g.strokeRect(1, 1, w - 2, h - 2);
+    }, 1.8, [22, 22]);
   }
 
   buildDetailedClubRoom() {

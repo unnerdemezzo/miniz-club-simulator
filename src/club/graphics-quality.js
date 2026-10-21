@@ -5,40 +5,40 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-// Fit the drawing buffer inside each resolution, keeping the viewport aspect
-// ratio. Swap the bounds in portrait; Retina/4K and ultrawide never exceed them.
 export const GRAPHICS_PROFILES = {
-  alta: { maxDpr: 3, maxLongEdge: 3840, maxShortEdge: 2160, pixelBudget: 3840 * 2160 },
-  media: { maxDpr: 1.5, maxLongEdge: 1600, maxShortEdge: 900, pixelBudget: 1600 * 900 },
-  bassa: { maxDpr: 1, maxLongEdge: 1280, maxShortEdge: 720, pixelBudget: 1280 * 720 },
+  alta: { maxDpr: 2.5, maxLongEdge: 3840, maxShortEdge: 2160, pixelBudget: 3840 * 2160 },
+  media: { maxDpr: 1.5, maxLongEdge: 1920, maxShortEdge: 1080, pixelBudget: 1920 * 1080 },
+  bassa: { maxDpr: 1.0, maxLongEdge: 1280, maxShortEdge: 720, pixelBudget: 1280 * 720 }
 };
 
-export function qualityPixelRatio(quality, width, height, displayDpr){
-  const profile = GRAPHICS_PROFILES[quality];
-  return Math.min(displayDpr, profile.maxDpr,
-    profile.maxLongEdge / Math.max(width, height),
-    profile.maxShortEdge / Math.min(width, height));
+export function qualityPixelRatio(quality, width, height, displayDpr) {
+  const profile = GRAPHICS_PROFILES[quality] || GRAPHICS_PROFILES.alta;
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  return Math.max(
+    0.75,
+    Math.min(
+      displayDpr || 1,
+      profile.maxDpr,
+      profile.maxLongEdge / Math.max(w, h),
+      profile.maxShortEdge / Math.min(w, h)
+    )
+  );
 }
 
-// Three r160 GTAO normalizes zero-length slice/sample vectors and feeds
-// rounded horizon cosines directly to sqrt/acos. A cosine of 1 + one float32
-// ULP can produce NaN; the following bloom can spread it into black tiles
-// on some GPUs. Keep the AO finite before denoising/bloom, without dropping
-// Alta resolution, shadows or contact shading.
-export function stableGtaoShader(source){
+export function stableGtaoShader(source) {
   const horizon = 'vec2 sinHorizons = sqrt(1. - cosHorizons * cosHorizons);';
-  if (!source.includes(horizon)) throw new Error('GTAO shader changed: review finite horizon guards');
-  return `vec3 slotSafeNormalize(vec3 v) {
+  if (!source || !source.includes(horizon)) return source;
+  return (
+    `vec3 slotSafeNormalize(vec3 v) {
     return v * inversesqrt(max(dot(v, v), 1e-12));
-  }\n` + source.replace(/\bnormalize\(/g, 'slotSafeNormalize(').replace(horizon,
-    `cosHorizons = clamp(cosHorizons, vec2(-1.), vec2(1.));\n\t\t\t\t${horizon}`);
+  }\n` +
+    source
+      .replace(/\bnormalize\(/g, 'slotSafeNormalize(')
+      .replace(horizon, `cosHorizons = clamp(cosHorizons, vec2(-1.), vec2(1.));\n\t\t\t\t${horizon}`)
+  );
 }
 
-// A single invalid HDR sample can contaminate all five bloom mip levels,
-// producing a large, screen-aligned flashing rectangle. Guard samples BEFORE
-// the blur, as well as its output; clamping NaN after the blur is too late.
-// WebGL2 has explicit NaN/Inf checks; the ordered range test keeps WebGL1
-// compatible. Valid half-float scene colours retain their original values.
 const finiteShader = `precision highp float;
 bool slotInvalid(float v) {
 #if __VERSION__ >= 300
@@ -51,84 +51,166 @@ float slotHdrChannel(float v) { return slotInvalid(v) ? 0. : clamp(v, 0., 65504.
 vec4 slotHdrColour(vec4 v) { return vec4(slotHdrChannel(v.r), slotHdrChannel(v.g), slotHdrChannel(v.b), slotHdrChannel(v.a)); }
 vec4 slotHdrSample(sampler2D image, vec2 uv) { return slotHdrColour(texture2D(image, uv)); }
 `;
-export function stableHdrShader(source){
- if(!source.includes('texture2D(')&&!source.includes('texture2D ('))throw new Error('HDR shader changed: review sample guards');
- if(!/gl_FragColor\s*=/.test(source)||! /}\s*$/.test(source))throw new Error('HDR shader changed: review output guard');
- return finiteShader+source.replace(/\btexture2D\s*\(/g,'slotHdrSample(').replace(/}\s*$/,'gl_FragColor = slotHdrColour(gl_FragColor);\n}');
-}
-export function stableAoBlendShader(source){
- const sample='vec4 texel = texture2D( tDiffuse, vUv );';
- if(!source.includes(sample))throw new Error('AO blend shader changed: review neutral fallback');
- return finiteShader+`float slotAoChannel(float v) { return slotInvalid(v) ? 1. : clamp(v, 0., 1.); }\n`
-  +source.replace(sample,sample+'\ntexel = vec4(slotAoChannel(texel.r), slotAoChannel(texel.g), slotAoChannel(texel.b), 1.);');
+
+export function stableHdrShader(source) {
+  if (!source) return source;
+  if (!source.includes('texture2D(') && !source.includes('texture2D (')) return source;
+  if (!/gl_FragColor\s*=/.test(source) || !/}\s*$/.test(source)) return source;
+  return (
+    finiteShader +
+    source
+      .replace(/\btexture2D\s*\(/g, 'slotHdrSample(')
+      .replace(/}\s*$/, 'gl_FragColor = slotHdrColour(gl_FragColor);\n}')
+  );
 }
 
-// The club, drag, all cameras and their UI share the same rendering pipeline.
-// No depth-of-field pass: every car, lane and sign stays in focus while racing.
-export function createQualityComposer(renderer, scene, camera, quality, width, height, dpr){
-  if (quality === 'bassa') return null;
-  const pixels = width * height * dpr * dpr;
-  const target = new THREE.WebGLRenderTarget(width * dpr, height * dpr, {
-    type: THREE.HalfFloatType, samples: pixels > 2.5e6 ? 2 : 4,
-  });
-  const composer = new EffectComposer(renderer, target);
-  composer.setPixelRatio(dpr); composer.setSize(width, height);
-  composer.addPass(new RenderPass(scene, camera));
-  if (quality === 'alta'){
-    const ao = new GTAOPass(scene, camera, width, height);
-    // Only points/lines change visibility during the normal pass. Record
-    // those visible nodes; restore them directly instead of scanning every
-    // mesh again or caching its unchanged visibility each frame.
-    ao.overrideVisibility = function(){
-      this.scene.traverseVisible(object=>{
-        if(object.isPoints||object.isLine){this._visibilityCache.set(object,object.visible);object.visible=false;}
-      });
-    };
-    ao.restoreVisibility = function(){
-      for(const [object,visible] of this._visibilityCache)object.visible=visible;
-      this._visibilityCache.clear();
-    };
-    ao.gtaoMaterial.fragmentShader = stableGtaoShader(ao.gtaoMaterial.fragmentShader);
-    ao.blendMaterial.fragmentShader = stableAoBlendShader(ao.blendMaterial.fragmentShader);
-    ao.updateGtaoMaterial({ radius: .04, distanceExponent: 1.5, thickness: .5, scale: 1.2, samples: 16 });
-    ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
-    ao.blendIntensity = .55; composer.addPass(ao);
-  }
-  const bloom=new UnrealBloomPass(new THREE.Vector2(width, height), .18, .4, 1.2);
-  for(const material of [bloom.materialHighPassFilter,...bloom.separableBlurMaterials,bloom.compositeMaterial,bloom.blendMaterial])material.fragmentShader=stableHdrShader(material.fragmentShader);
-  composer.addPass(bloom);
-  const output=new OutputPass();output.material.fragmentShader=stableHdrShader(output.material.fragmentShader);
-  composer.addPass(output);
-  return composer;
+export function stableAoBlendShader(source) {
+  const sample = 'vec4 texel = texture2D( tDiffuse, vUv );';
+  if (!source || !source.includes(sample)) return source;
+  return (
+    finiteShader +
+    `float slotAoChannel(float v) { return slotInvalid(v) ? 1. : clamp(v, 0., 1.); }\n` +
+    source.replace(
+      sample,
+      sample + '\ntexel = vec4(slotAoChannel(texel.r), slotAoChannel(texel.g), slotAoChannel(texel.b), 1.);'
+    )
+  );
 }
 
-export function disposeComposer(composer){
+export function disposeComposer(composer) {
   if (!composer) return;
-  // EffectComposer.dispose() releases only its own targets and copy pass.
-  // AO/bloom/output own more targets and materials that must be released too.
-  for (const pass of composer.passes){
-    pass.dispose?.();
-    // r160 GTAOPass.dispose omits its separate blend material.
-    if(pass instanceof GTAOPass)pass.blendMaterial.dispose();
+  for (const pass of composer.passes || []) {
+    try {
+      pass.dispose?.();
+      if (pass instanceof GTAOPass && pass.blendMaterial) pass.blendMaterial.dispose();
+    } catch (_) {}
   }
-  composer.dispose();
+  try {
+    composer.dispose();
+  } catch (_) {}
 }
 
-// Resize the existing effects; keep their materials and the scene intact.
-export function resizeQualityComposer(composer, width, height, dpr){
-  if (!composer) return;
-  const samples = width * height * dpr * dpr > 2.5e6 ? 2 : 4;
-  for (const target of [composer.renderTarget1, composer.renderTarget2]){
-    if (target.samples !== samples){ target.samples = samples; target.dispose(); }
+function buildInternalComposer(renderer, scene, camera, profileKey, width, height, dpr) {
+  if (profileKey === 'bassa') return null;
+  try {
+    const pixels = width * height * dpr * dpr;
+    const target = new THREE.WebGLRenderTarget(Math.max(1, Math.round(width * dpr)), Math.max(1, Math.round(height * dpr)), {
+      type: THREE.HalfFloatType,
+      samples: pixels > 2.5e6 ? 2 : 4
+    });
+    const composer = new EffectComposer(renderer, target);
+    composer.setPixelRatio(dpr);
+    composer.setSize(width, height);
+    composer.addPass(new RenderPass(scene, camera));
+
+    if (profileKey === 'alta') {
+      try {
+        const ao = new GTAOPass(scene, camera, width, height);
+        ao.overrideVisibility = function () {
+          this.scene.traverseVisible((object) => {
+            if (object.isPoints || object.isLine) {
+              this._visibilityCache.set(object, object.visible);
+              object.visible = false;
+            }
+          });
+        };
+        ao.restoreVisibility = function () {
+          for (const [object, visible] of this._visibilityCache) object.visible = visible;
+          this._visibilityCache.clear();
+        };
+        ao.gtaoMaterial.fragmentShader = stableGtaoShader(ao.gtaoMaterial.fragmentShader);
+        ao.blendMaterial.fragmentShader = stableAoBlendShader(ao.blendMaterial.fragmentShader);
+        ao.updateGtaoMaterial({ radius: 0.04, distanceExponent: 1.5, thickness: 0.5, scale: 1.2, samples: 16 });
+        ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+        ao.blendIntensity = 0.55;
+        composer.addPass(ao);
+      } catch (_) {}
+    }
+
+    const bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.18, 0.4, 1.2);
+    for (const material of [
+      bloom.materialHighPassFilter,
+      ...bloom.separableBlurMaterials,
+      bloom.compositeMaterial,
+      bloom.blendMaterial
+    ]) {
+      if (material) material.fragmentShader = stableHdrShader(material.fragmentShader);
+    }
+    composer.addPass(bloom);
+
+    const output = new OutputPass();
+    if (output.material) output.material.fragmentShader = stableHdrShader(output.material.fragmentShader);
+    composer.addPass(output);
+    return composer;
+  } catch (_) {
+    return null;
   }
-  composer.setPixelRatio(dpr); composer.setSize(width, height);
 }
 
-// RenderPass and GTAO both render the scene. The same light's shadow map
-// must be computed once for the current poses, then reused by later passes.
-export function beginGraphicsFrame(renderer,scene){
-  if(scene){scene.matrixWorldAutoUpdate=false;scene.updateMatrixWorld();}
-  renderer.shadowMap.autoUpdate=false;
-  renderer.shadowMap.needsUpdate=true;
-  renderer.info?.reset();
+export function createQualityComposer(renderer, scene, camera, mainLight) {
+  let currentQuality = 'high';
+  let composer = null;
+
+  const mapQualityKey = (q) => {
+    if (q === 'low' || q === 'bassa') return 'bassa';
+    if (q === 'medium' || q === 'media') return 'media';
+    return 'alta';
+  };
+
+  const rebuild = (q) => {
+    currentQuality = q || currentQuality;
+    const profileKey = mapQualityKey(currentQuality);
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+    const dpr = qualityPixelRatio(profileKey, width, height, window.devicePixelRatio || 1);
+
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(width, height);
+
+    if (mainLight && mainLight.shadow) {
+      if (profileKey === 'bassa') {
+        renderer.shadowMap.enabled = false;
+      } else {
+        renderer.shadowMap.enabled = true;
+        const shadowSize = profileKey === 'alta' ? 2048 : 1024;
+        if (mainLight.shadow.mapSize.x !== shadowSize) {
+          mainLight.shadow.mapSize.set(shadowSize, shadowSize);
+          if (mainLight.shadow.map) {
+            mainLight.shadow.map.dispose();
+            mainLight.shadow.map = null;
+          }
+        }
+      }
+    }
+
+    disposeComposer(composer);
+    composer = buildInternalComposer(renderer, scene, camera, profileKey, width, height, dpr);
+  };
+
+  rebuild('high');
+
+  return {
+    setQuality(q) {
+      rebuild(q);
+    },
+    resize() {
+      const profileKey = mapQualityKey(currentQuality);
+      const width = Math.max(1, window.innerWidth);
+      const height = Math.max(1, window.innerHeight);
+      const dpr = qualityPixelRatio(profileKey, width, height, window.devicePixelRatio || 1);
+      renderer.setPixelRatio(dpr);
+      renderer.setSize(width, height);
+      if (composer) {
+        composer.setPixelRatio(dpr);
+        composer.setSize(width, height);
+      }
+    },
+    render() {
+      if (composer) {
+        composer.render();
+      } else {
+        renderer.render(scene, camera);
+      }
+    }
+  };
 }

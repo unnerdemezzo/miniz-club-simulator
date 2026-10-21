@@ -66,7 +66,10 @@ class MiniZSimulatorApp {
 
   initPWA() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => reg.update().catch(() => {}))
+        .catch(() => {});
     }
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -154,24 +157,28 @@ class MiniZSimulatorApp {
       if (msg && statusText) statusText.textContent = msg;
     };
 
-    setProgress(15, 'Allestimento sala del Club Mini-Z, pedana piloti, officina 3 banchi e direzione gara...');
-    this.club = new ClubEnvironment(this.scene, this.renderer);
+    try {
+      setProgress(15, 'Allestimento sala del Club Mini-Z, pedana piloti, officina 3 banchi e direzione gara...');
+      this.club = new ClubEnvironment(this.scene, this.renderer);
 
-    setProgress(35, 'Montaggio tappeto in gomma Kyosho RCP Track (mattonelle 50×50cm)...');
-    this.loadActiveTrack(false);
+      setProgress(35, 'Montaggio tappeto in gomma Kyosho RCP Track (mattonelle 50×50cm)...');
+      this.loadActiveTrack(false);
 
-    setProgress(45, 'Caricamento modello 3D Ferrari 499P Hypercar e telaio Kyosho Mini-Z (17,2 cm)...');
-    this.car = new MiniZCar(this.scene, (glbPct) => {
-      const totalPct = Math.min(98, 45 + Math.round(glbPct * 0.52));
-      setProgress(totalPct, `Calibrazione carrozzeria 3D in scala 1:27 (${glbPct}%)...`);
-    });
+      setProgress(45, 'Caricamento modello 3D Ferrari 499P Hypercar e telaio Kyosho Mini-Z (17,2 cm)...');
+      this.car = new MiniZCar(this.scene, (glbPct) => {
+        const totalPct = Math.min(98, 45 + Math.round(glbPct * 0.52));
+        setProgress(totalPct, `Calibrazione carrozzeria 3D in scala 1:27 (${glbPct}%)...`);
+      });
 
-    const activeProfile = this.profileManager.getActiveProfile(this.bodyNamesMap, this.trackNamesMap);
-    await this.car.applySetup(activeProfile.carSetup);
-    this.car.resetOnTrack(this.trackData.startX, this.trackData.startZ, this.trackData.startHeading);
+      const activeProfile = this.profileManager.getActiveProfile(this.bodyNamesMap, this.trackNamesMap);
+      await this.car.applySetup(activeProfile.carSetup);
+      this.car.resetOnTrack(this.trackData.startX, this.trackData.startZ, this.trackData.startHeading);
 
-    // Applica la modalità di risoluzione grafica salvata
-    this.applyGraphicsQuality(this.profileManager.state.graphicsQuality, false);
+      // Applica la modalità di risoluzione grafica salvata
+      this.applyGraphicsQuality(this.profileManager.state.graphicsQuality, false);
+    } catch (err) {
+      console.error('Errore durante il caricamento iniziale:', err);
+    }
 
     // Inizializza l'interfaccia utente e il menu a 5 schede
     this.initUI();
