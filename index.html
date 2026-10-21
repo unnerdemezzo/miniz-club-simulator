@@ -68,7 +68,7 @@
       <!-- 1. Riquadrino Versione -->
       <div class="hud-box version-box" title="Versione attuale dell'applicazione">
         <span class="box-label">VERSIONE</span>
-        <span id="hud-version-val" class="box-value">v1.2.0</span>
+        <span id="hud-version-val" class="box-value">v1.3.0</span>
       </div>
 
       <!-- 2. Riquadrino 3 Modalità Risoluzione Grafica con indicatore attivo -->
@@ -553,6 +553,26 @@
     </div>
   </div>
 
+  <script>
+    if ('caches' in window) {
+      caches.keys().then((keys) => {
+        keys.forEach((k) => {
+          if (k !== 'miniz-club-sim-v1.3.0') caches.delete(k);
+        });
+      }).catch(() => {});
+    }
+    if ('serviceWorker' in navigator) {
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((r) => r.update());
+      }).catch(() => {});
+    }
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

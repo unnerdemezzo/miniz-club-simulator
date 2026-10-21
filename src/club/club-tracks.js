@@ -9,12 +9,12 @@ export const CLUB_TRACKS = {
     marshalSeatHeight: 0.43,
     marshalPositions: [
       [-3.18, 2.55],
-      [2.45, 5.42],
+      [5.35, 5.25],
       [8.08, 1.85]
     ],
     marshalZones: [
       { name: 'Curva Ovest' },
-      { name: 'Fondo Pista' },
+      { name: 'Curvone Nord-Est' },
       { name: 'Tornante Est' }
     ]
   }

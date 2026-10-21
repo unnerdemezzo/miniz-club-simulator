@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { TRACK_LAYOUTS } from '../data/tracks.js';
 import { BOARD, DRIVERS, FLOOR, LANES, ROOM, ROST } from '../club/config.js';
 import { canvasTex, clamp, normalFromHeight, rng, speckle } from '../club/util.js';
@@ -345,10 +346,10 @@ export class ClubEnvironment {
     cyl(0.2, 0.2, 0.04, M.darkMetal, 9.1, FLOOR + 2.25, RZ0 + 0.015, { rx: Math.PI / 2, seg: 48 });
 
     // 4. ELEMENTO ORIGINALE MINI-Z: Vetrina Illuminata "Kyosho AutoScale Collection" con carrozzerie in teca LED!
-    this.buildAutoScaleShowcase(root, 0.35, FLOOR, RZ0 + 0.28);
+    this.buildAutoScaleShowcase(root, -0.82, FLOOR, RZ0 + 0.25);
 
-    // 5. ELEMENTO ORIGINALE MINI-Z: Podio Premiazione 1° / 2° / 3° Posto "Mini-Z Cup" nell'angolo destro
-    this.buildWinnersPodium(root, 5.15, FLOOR, RZ0 + 0.45);
+    // 5. ELEMENTO ORIGINALE MINI-Z: Podio Premiazione 1° / 2° / 3° Posto "Mini-Z Cup"
+    this.buildWinnersPodium(root, 5.45, FLOOR, RZ0 + 0.38);
 
     // 6. Parete attrezzata officina sulla sinistra + 3 Banchi Box RC
     buildWoodWorkshopWall(root);
@@ -430,7 +431,7 @@ export class ClubEnvironment {
       cyl(0.025, 0.025, 0.62, M.metal, bx + 0.8, FLOOR + 0.32, bz + 0.3);
       cyl(0.22, 0.22, 0.02, M.darkMetal, bx + 0.8, FLOOR + 0.01, bz + 0.3, { seg: 28 });
     }
-    buildClubAmenities(root, M, 'Legno');
+    buildClubAmenities(root, M, 'Mini-Z');
 
     // Scaffale con le scatole Kyosho Readyset Mini-Z
     const shelfX = RX1 - 0.2;
@@ -473,6 +474,20 @@ export class ClubEnvironment {
     for (let x = ROST.x0 + 0.08; x <= ROST.x1; x += 1.05) {
       cyl(0.02, 0.02, 1.0, railM, x, ROST.top + 0.5, railZ);
     }
+    // Pannello paragambe anteriore sul palco piloti con grafica Kyosho Mini-Z Cup
+    const standSkirtTex = canvasTex(1024, 160, (g, w, h) => {
+      g.fillStyle = '#141821';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = '#c8141b';
+      g.fillRect(0, 0, w, 18);
+      g.fillRect(0, h - 14, w, 14);
+      g.fillStyle = '#ffffff';
+      g.font = `italic 900 46px ${B.FONT}`;
+      g.textAlign = 'center';
+      g.fillText('KYOSHO MINI-Z CUP · PALCO PILOTI UFFICIALE', w / 2, 102);
+    }, { clamp: true });
+    box(ROST.x1 - ROST.x0 - 0.08, 0.62, 0.024, new THREE.MeshStandardMaterial({ color: 0x141821, roughness: 0.5 }), (ROST.x0 + ROST.x1) / 2, ROST.top + 0.32, railZ);
+    plane(ROST.x1 - ROST.x0 - 0.12, 0.58, new THREE.MeshStandardMaterial({ map: standSkirtTex, roughness: 0.45 }), (ROST.x0 + ROST.x1) / 2, ROST.top + 0.32, railZ - 0.015, { ry: Math.PI });
 
     this.stationDisplays = createStationDisplays(LANES);
     const stationScreenM = new THREE.MeshBasicMaterial({ map: this.stationDisplays.tex });
@@ -718,6 +733,9 @@ export class ClubEnvironment {
     const bridgeSample = this.curveSamples[bridgeIdx];
     this.buildTimingBridge(bridgeSample, spec.laneWidth);
 
+    // 3b. Allestimento scenografico interno in scala 1:27 sul tappeto verde (cartelloni sponsor, box telemetria e gomme di protezione)
+    this.buildInfieldScenery(this.curveSamples, laneHalf);
+
     // 4. Crea / reimposta le 3 Auto Avversarie AI Mini-Z sul tracciato
     this.spawnAiCars();
 
@@ -764,6 +782,125 @@ export class ClubEnvironment {
         lapTime: 0,
         bestLap: 6.45 + i * 0.12
       });
+    }
+
+    // Sostituisce le auto AI procedurali con veri modelli 3D Hypercar in scala 1:27 con livree WEC dedicate
+    const applyGlbToAiCars = (gltfScene) => {
+      const aiTints = ['#ffd43b', '#38bdf8', '#f8fafc']; // #83 Giallo Modena, #50 Blu Corsa, #51 Bianco/Rosso
+      this.aiCars.forEach((ai, idx) => {
+        const clone = gltfScene.clone(true);
+        const tintHex = aiTints[idx % aiTints.length];
+
+        clone.traverse((node) => {
+          const name = node.name || '';
+          const matName = node.material?.name || '';
+          if (
+            /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|DAMAGE|glow/i.test(name) ||
+            /Rim_Blur|GLOW/i.test(matName)
+          ) {
+            node.visible = false;
+          }
+          if (node.isMesh && node.visible) {
+            node.castShadow = true;
+            node.receiveShadow = true;
+            node.material = Array.isArray(node.material)
+              ? node.material.map((m) => (m ? m.clone() : m))
+              : node.material
+                ? node.material.clone()
+                : node.material;
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            mats.forEach((mat) => {
+              if (!mat) return;
+              const mName = mat.name || '';
+              if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
+                mat.color?.set(tintHex);
+                mat.metalness = 0.14;
+                mat.roughness = 0.16;
+                if ('clearcoat' in mat) {
+                  mat.clearcoat = 1.0;
+                  mat.clearcoatRoughness = 0.04;
+                }
+                if (tintHex.toLowerCase() !== '#ffffff') {
+                  mat.emissive?.set(tintHex);
+                  mat.emissiveMap = null;
+                  mat.emissiveIntensity = 0.38;
+                } else if (/^Body$/i.test(mName) && mat.emissiveMap) {
+                  mat.emissiveIntensity = 0.0;
+                }
+                mat.envMapIntensity = 1.35;
+                mat.needsUpdate = true;
+              }
+            });
+          }
+        });
+
+        clone.updateMatrixWorld(true);
+        const box = new THREE.Box3();
+        clone.traverse((node) => {
+          if (node.isMesh && node.visible) {
+            let p = node.parent;
+            let allVis = true;
+            while (p) {
+              if (!p.visible) {
+                allVis = false;
+                break;
+              }
+              p = p.parent;
+            }
+            if (allVis) box.expandByObject(node);
+          }
+        });
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const scaleFactor = 0.172 / Math.max(size.z, size.x, 0.001);
+        clone.scale.setScalar(scaleFactor);
+        // Orienta il muso lungo +X locale di ai.carObj.root
+        clone.rotation.y = Math.PI / 2;
+        clone.updateMatrixWorld(true);
+
+        const scaledBox = new THREE.Box3();
+        clone.traverse((node) => {
+          if (node.isMesh && node.visible) {
+            let p = node.parent;
+            let allVis = true;
+            while (p) {
+              if (!p.visible) {
+                allVis = false;
+                break;
+              }
+              p = p.parent;
+            }
+            if (allVis) scaledBox.expandByObject(node);
+          }
+        });
+        const scCenter = new THREE.Vector3();
+        scaledBox.getCenter(scCenter);
+        clone.position.x -= scCenter.x;
+        clone.position.z -= scCenter.z;
+        clone.position.y -= scaledBox.min.y;
+
+        while (ai.carObj.root.children.length > 0) {
+          ai.carObj.root.remove(ai.carObj.root.children[0]);
+        }
+        ai.carObj.wheels = [];
+        ai.carObj.root.scale.setScalar(1.0);
+        ai.carObj.root.add(clone);
+      });
+    };
+
+    if (this.aiGlbScene) {
+      applyGlbToAiCars(this.aiGlbScene);
+    } else {
+      const loader = new GLTFLoader();
+      loader.load(
+        '/models/ferrari_499p.glb',
+        (gltf) => {
+          this.aiGlbScene = gltf.scene;
+          applyGlbToAiCars(gltf.scene);
+        },
+        undefined,
+        () => {}
+      );
     }
   }
 
@@ -1088,6 +1225,139 @@ export class ClubEnvironment {
     // Inizializza la telemetria del Maxischermo a parete
     this.updateBridgeDisplay(0, null, null);
     this.trackGroup.add(bridgeGroup);
+  }
+
+  // Scenografia in scala 1:27 nelle isole verdi interne della pista (cartelloni sponsor, postazione telemetria e pile di gomme)
+  buildInfieldScenery(samples, laneHalf) {
+    const minClearance = laneHalf + 0.32;
+    const isFarFromTrack = (x, z, minDist = minClearance) => {
+      const minSq = minDist * minDist;
+      for (let i = 0; i < samples.length; i += 3) {
+        const p = samples[i].pt;
+        const dx = p.x - x;
+        const dz = p.z - z;
+        if (dx * dx + dz * dz < minSq) return false;
+      }
+      return true;
+    };
+
+    const sceneryGroup = new THREE.Group();
+    sceneryGroup.name = 'Scenografia Infield Mini-Z 1:27';
+
+    // 1. Cartelloni pubblicitari a bordo rettilineo in scala 1:27
+    const boardSpots = [
+      [0.4, -0.38, 0],
+      [1.8, -0.38, 0],
+      [3.2, -0.38, 0],
+      [4.6, -0.38, 0],
+      [1.2, -1.65, 0],
+      [3.7, -1.65, 0]
+    ];
+    boardSpots.forEach(([bx, bz, ry], idx) => {
+      if (!isFarFromTrack(bx, bz, laneHalf + 0.18)) return;
+      const b = B.BRANDS[idx % B.BRANDS.length];
+      const backing = new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, 0.055, 0.010),
+        this.M.darkMetal
+      );
+      backing.position.set(bx, 0.032, bz);
+      backing.rotation.y = ry;
+      backing.castShadow = true;
+
+      const boardMat = new THREE.MeshStandardMaterial({ map: B.brandBoard(b, 512, 64), roughness: 0.45 });
+      const faceFront = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.048), boardMat);
+      faceFront.position.set(bx, 0.032, bz + 0.006);
+      faceFront.rotation.y = ry;
+
+      const faceBack = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.048), boardMat);
+      faceBack.position.set(bx, 0.032, bz - 0.006);
+      faceBack.rotation.y = ry + Math.PI;
+
+      sceneryGroup.add(backing, faceFront, faceBack);
+    });
+
+    // 2. Postazione Pit-Box / Gare Kyosho Mini-Z Cup al centro dell'infield verde (se libera dal tracciato)
+    if (isFarFromTrack(2.45, -1.30, laneHalf + 0.42)) {
+      const pitBuilding = new THREE.Group();
+      pitBuilding.position.set(2.45, 0, -1.30);
+
+      const basePad = new THREE.Mesh(
+        new THREE.BoxGeometry(1.65, 0.006, 0.56),
+        new THREE.MeshStandardMaterial({ color: 0x2c323d, roughness: 0.8 })
+      );
+      basePad.position.y = 0.003;
+      pitBuilding.add(basePad);
+
+      const boxBody = new THREE.Mesh(
+        new THREE.BoxGeometry(1.36, 0.14, 0.32),
+        new THREE.MeshStandardMaterial({ color: 0x181c24, roughness: 0.4, metalness: 0.3 })
+      );
+      boxBody.position.set(0, 0.073, -0.04);
+      boxBody.castShadow = true;
+      boxBody.receiveShadow = true;
+
+      // 3 Porte Box Pit-Lane sul fronte dell'edificio
+      const bayDoorMat = new THREE.MeshStandardMaterial({ color: 0x2b3342, roughness: 0.5, metalness: 0.5 });
+      for (const dx of [-0.42, 0, 0.42]) {
+        const door = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.105), bayDoorMat);
+        door.position.set(dx, 0.058, 0.122);
+        pitBuilding.add(door);
+      }
+
+      const roof = new THREE.Mesh(
+        new THREE.BoxGeometry(1.42, 0.040, 0.38),
+        new THREE.MeshStandardMaterial({ color: 0x1e2430, roughness: 0.35 })
+      );
+      roof.position.set(0, 0.158, -0.02);
+      roof.castShadow = true;
+
+      const signTex = canvasTex(1024, 96, (g, w, h) => {
+        g.fillStyle = '#c8141b';
+        g.fillRect(0, 0, w, h);
+        g.strokeStyle = '#ffffff';
+        g.lineWidth = 4;
+        g.strokeRect(6, 6, w - 12, h - 12);
+        g.fillStyle = '#ffffff';
+        g.font = 'italic 900 44px "Titillium Web", sans-serif';
+        g.textAlign = 'center';
+        g.fillText('KYOSHO MINI-Z PADDOCK · RACE SERVICE', w / 2, 63);
+      }, { clamp: true });
+      const signPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.38, 0.036),
+        new THREE.MeshBasicMaterial({ map: signTex })
+      );
+      signPlane.position.set(0, 0.158, 0.172);
+
+      pitBuilding.add(boxBody, roof, signPlane);
+      sceneryGroup.add(pitBuilding);
+    }
+
+    // 3. Pile di gomme protettive rosso/bianche nelle isole interne del tappeto verde
+    const tireMatRed = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.7 });
+    const tireMatWhite = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.7 });
+    const tireGeo = new THREE.TorusGeometry(0.022, 0.009, 8, 16);
+    tireGeo.rotateX(Math.PI / 2);
+
+    const tireClusters = [
+      [-0.35, -1.55],
+      [5.15, -1.45],
+      [2.45, -3.55],
+      [0.25, -2.15],
+      [4.45, -2.15]
+    ];
+    for (const [tx, tz] of tireClusters) {
+      if (!isFarFromTrack(tx, tz, laneHalf + 0.24)) continue;
+      for (let row = 0; row < 3; row++) {
+        for (let stack = 0; stack < 2; stack++) {
+          const tMesh = new THREE.Mesh(tireGeo, (row + stack) % 2 === 0 ? tireMatRed : tireMatWhite);
+          tMesh.position.set(tx + (row - 1) * 0.052, 0.009 + stack * 0.016, tz);
+          tMesh.castShadow = true;
+          sceneryGroup.add(tMesh);
+        }
+      }
+    }
+
+    this.trackGroup.add(sceneryGroup);
   }
 
   updateBridgeDisplay(lapCount, lastLapSec, bestLapSec) {

@@ -39,7 +39,7 @@ export class ProfileManager {
 
   getDefaultState() {
     return {
-      appVersion: '1.2.0',
+      appVersion: '1.3.0',
       currentTrackId: 'club_veloce',
       reverseTrack: false,
       currentBodyId: 'ferrari_499p',
@@ -99,7 +99,7 @@ export class ProfileManager {
       return {
         ...def,
         ...parsed,
-        appVersion: '1.2.0',
+        appVersion: '1.3.0',
         audio: { ...def.audio, ...(parsed.audio || {}) },
         autoProfiles: { ...def.autoProfiles, ...(parsed.autoProfiles || {}) },
         lapRecords: { ...def.lapRecords, ...(parsed.lapRecords || {}) }

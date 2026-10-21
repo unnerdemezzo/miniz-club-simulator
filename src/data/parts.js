@@ -20,44 +20,47 @@ export const REAL_SCALE = {
 export const CAR_BODIES = [
   {
     id: 'ferrari_499p',
-    name: 'Ferrari 499P Le Mans Hypercar',
+    name: 'Ferrari 499P #51 Rosso Corsa (WEC)',
     scaleLabel: 'Scala 1:27 • Passo 98mm LL (Wide)',
     lengthCm: 17.2,
     widthCm: 7.8,
     heightCm: 4.6,
     glbUrl: '/models/ferrari_499p.glb',
+    liveryTint: '#ffffff',
     defaultColor: '#d40000',
     aeroBonus: 1.12,
     weightBias: 0.98,
-    description: 'Modello 3D ufficiale Ferrari 499P Hypercar adattato al telaio Mini-Z LM 98mm con fari LED attivi.'
+    description: 'Modello 3D ufficiale Ferrari 499P Hypercar #51 adattato al telaio Mini-Z LM 98mm con fari LED attivi.'
   },
   {
     id: 'miniz_gt_pro',
-    name: 'Kyosho Autoscale GT-R Nismo PRO',
-    scaleLabel: 'Scala 1:27 • Passo 94mm L (Wide)',
-    lengthCm: 16.8,
-    widthCm: 7.6,
-    heightCm: 4.8,
-    glbUrl: null, // Procedural detailed Mini-Z body shell + livery
-    defaultColor: '#f8fafc',
+    name: 'Ferrari 499P #83 Giallo Modena (AF Corse)',
+    scaleLabel: 'Scala 1:27 • Passo 98mm LL (Wide)',
+    lengthCm: 17.2,
+    widthCm: 7.8,
+    heightCm: 4.6,
+    glbUrl: '/models/ferrari_499p.glb',
+    liveryTint: '#ffd43b',
+    defaultColor: '#facc15',
     accentColor: '#e11d48',
-    aeroBonus: 1.04,
-    weightBias: 1.02,
-    description: 'Carrozzeria Autoscale GT da turismo equilibrata, perfetta sia per il Grip su RCP sia per il Drift AWD.'
+    aeroBonus: 1.08,
+    weightBias: 1.0,
+    description: 'Carrozzeria 3D Hypercar in livrea speciale Giallo Modena #83 AF Corse per il telaio Mini-Z.'
   },
   {
     id: 'miniz_proto_lm',
-    name: 'Kyosho LM Carbon Prototype',
+    name: 'Ferrari 499P #50 Prototipo Blu Corsa',
     scaleLabel: 'Scala 1:27 • Passo 98mm LL (Ultraleggera)',
     lengthCm: 17.4,
     widthCm: 7.9,
     heightCm: 4.3,
-    glbUrl: null,
+    glbUrl: '/models/ferrari_499p.glb',
+    liveryTint: '#38bdf8',
     defaultColor: '#0284c7',
     accentColor: '#38bdf8',
     aeroBonus: 1.15,
     weightBias: 0.94,
-    description: 'Carrozzeria ribassata in lexan ultraleggero da gara nazionale Mini-Z Cup con baricentro bassissimo.'
+    description: 'Carrozzeria 3D Hypercar ribassata in livrea Blu Corsa da gara nazionale Mini-Z Cup.'
   }
 ];
 

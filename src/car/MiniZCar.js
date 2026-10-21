@@ -26,11 +26,13 @@ export class MiniZCar {
     this.sprungGroup = new THREE.Group();
     this.rootGroup.add(this.sprungGroup);
 
-    // Sottogruppi per Telaio Meccanico e Carrozzeria
+    // Sottogruppi per Telaio Meccanico, Carrozzeria e Luci procedurali
     this.chassisGroup = new THREE.Group();
     this.bodyGroup = new THREE.Group();
+    this.proceduralLightsGroup = new THREE.Group();
     this.sprungGroup.add(this.chassisGroup);
     this.sprungGroup.add(this.bodyGroup);
+    this.sprungGroup.add(this.proceduralLightsGroup);
 
     this.scene.add(this.rootGroup);
 
@@ -227,7 +229,7 @@ export class MiniZCar {
     const rr = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.0028, 0.003), brakeMat2);
     rr.position.set(-0.018, 0.024, -0.085);
 
-    this.sprungGroup.add(fl, fr, rl, rr);
+    this.proceduralLightsGroup.add(fl, fr, rl, rr);
   }
 
   async applySetup(setup) {
@@ -262,21 +264,92 @@ export class MiniZCar {
         const gltfScene = await this.fetchGlbModel(bodySpec.glbUrl);
         const clone = gltfScene.clone(true);
 
-        // Nasconde i nodi sfocati (RIM_BLUR) e LOD a bassa risoluzione presenti nel file .glb
+        // Nasconde i nodi sfocati (RIM_BLUR), i billboard opachi (glowx) e i LOD a bassa risoluzione presenti nel file .glb
         clone.traverse((node) => {
           const name = node.name || '';
-          if (/RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|DAMAGE/i.test(name)) {
+          const matName = node.material?.name || '';
+          if (
+            /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|DAMAGE|glow/i.test(name) ||
+            /Rim_Blur|GLOW/i.test(matName)
+          ) {
             node.visible = false;
           }
-          if (node.isMesh) {
+          if (node.isMesh && node.visible) {
             node.castShadow = true;
             node.receiveShadow = true;
+
+            // Clona e calibra i materiali PBR del modello 3D Ferrari 499P
+            node.material = Array.isArray(node.material)
+              ? node.material.map((m) => (m ? m.clone() : m))
+              : node.material
+                ? node.material.clone()
+                : node.material;
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            const useCustomColor =
+              customColorHex &&
+              bodySpec.defaultColor &&
+              customColorHex.toLowerCase() !== bodySpec.defaultColor.toLowerCase();
+            const tintHex = useCustomColor ? customColorHex : bodySpec.liveryTint || '#ffffff';
+
+            mats.forEach((mat) => {
+              if (!mat) return;
+              const mName = mat.name || '';
+              if (mat.map) mat.map.anisotropy = 8;
+
+              if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
+                mat.color?.set(tintHex);
+                mat.metalness = 0.14;
+                mat.roughness = 0.16;
+                if ('clearcoat' in mat) {
+                  mat.clearcoat = 1.0;
+                  mat.clearcoatRoughness = 0.04;
+                }
+                if (tintHex.toLowerCase() !== '#ffffff') {
+                  mat.emissive?.set(tintHex);
+                  mat.emissiveMap = null;
+                  mat.emissiveIntensity = 0.36;
+                } else if (/^Body$/i.test(mName) && mat.emissiveMap) {
+                  mat.emissiveIntensity = 0.0;
+                }
+                mat.envMapIntensity = 1.35;
+                mat.needsUpdate = true;
+              } else if (/Glass/i.test(mName)) {
+                mat.metalness = 0.08;
+                mat.roughness = 0.06;
+                mat.transparent = true;
+                mat.opacity = 0.62;
+                mat.needsUpdate = true;
+              } else if (/Tyre/i.test(mName)) {
+                mat.metalness = 0.04;
+                mat.roughness = 0.78;
+                mat.needsUpdate = true;
+              } else if (/RIMS|Wheels/i.test(mName)) {
+                mat.color?.setRGB(0.92, 0.92, 0.95);
+                mat.metalness = 0.75;
+                mat.roughness = 0.24;
+                mat.needsUpdate = true;
+              }
+            });
           }
         });
 
-        // Calcola il Bounding Box reale del modello .glb per ridimensionarlo esattamente a 17.2 cm (Scala 1:27 Mini-Z)
+        // Calcola il Bounding Box reale solo sui mesh VISIBILI del modello .glb per ridimensionarlo esattamente a 17.2 cm
         clone.updateMatrixWorld(true);
-        const box = new THREE.Box3().setFromObject(clone);
+        const box = new THREE.Box3();
+        clone.traverse((node) => {
+          if (node.isMesh && node.visible) {
+            let p = node.parent;
+            let allVis = true;
+            while (p) {
+              if (!p.visible) {
+                allVis = false;
+                break;
+              }
+              p = p.parent;
+            }
+            if (allVis) box.expandByObject(node);
+          }
+        });
         const size = new THREE.Vector3();
         const center = new THREE.Vector3();
         box.getSize(size);
@@ -296,7 +369,21 @@ export class MiniZCar {
         }
 
         clone.updateMatrixWorld(true);
-        const scaledBox = new THREE.Box3().setFromObject(clone);
+        const scaledBox = new THREE.Box3();
+        clone.traverse((node) => {
+          if (node.isMesh && node.visible) {
+            let p = node.parent;
+            let allVis = true;
+            while (p) {
+              if (!p.visible) {
+                allVis = false;
+                break;
+              }
+              p = p.parent;
+            }
+            if (allVis) scaledBox.expandByObject(node);
+          }
+        });
         const scaledCenter = new THREE.Vector3();
         scaledBox.getCenter(scaledCenter);
 
@@ -456,13 +543,18 @@ export class MiniZCar {
 
   setNakedChassisMode(showNaked) {
     if (this.currentSetup) this.currentSetup.showNakedChassis = showNaked;
+    const hasGlbWheels = this.glbWheelNodes.lf.length > 0;
     if (showNaked) {
-      // Solleva la carrozzeria o la rende fantasma per mostrare il telaio Kyosho completo sotto!
+      // Mostra solo il telaio Kyosho Mini-Z completo con batterie ministilo, molle e motore
       this.bodyGroup.visible = false;
+      this.chassisGroup.visible = true;
+      this.proceduralLightsGroup.visible = false;
       this.setChassisWheelsVisible(true);
     } else {
+      // Con la carrozzeria montata, nasconde il telaio interno così le batterie AAA non sporgono mai dal cofano/tetto!
       this.bodyGroup.visible = true;
-      const hasGlbWheels = this.glbWheelNodes.lf.length > 0;
+      this.chassisGroup.visible = !hasGlbWheels;
+      this.proceduralLightsGroup.visible = !hasGlbWheels;
       this.setChassisWheelsVisible(!hasGlbWheels);
     }
   }
