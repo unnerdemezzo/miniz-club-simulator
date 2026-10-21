@@ -305,18 +305,37 @@ export class MiniZCar {
         clone.position.z -= scaledCenter.z;
         clone.position.y -= scaledBox.min.y;
 
-        // Cerca i nodi ruota/sospensione del GLB per farli sterzare e girare!
+        wrapper.add(clone);
+        wrapper.updateMatrixWorld(true);
+
+        // Impernia ciascuna delle 4 ruote del modello GLB esattamente sul proprio mozzo (hubCenter),
+        // così sterzano e ruotano sul posto senza mai orbitare attorno al centro dell'auto!
+        const rawWheels = { lf: null, rf: null, lr: null, rr: null };
         clone.traverse((node) => {
           const n = node.name || '';
-          if (/^WHEEL_LF/i.test(n)) this.glbWheelNodes.lf.push(node);
-          if (/^WHEEL_RF/i.test(n)) this.glbWheelNodes.rf.push(node);
-          if (/^WHEEL_LR/i.test(n)) this.glbWheelNodes.lr.push(node);
-          if (/^WHEEL_RR/i.test(n)) this.glbWheelNodes.rr.push(node);
-          if (/^SUSP_LF/i.test(n)) this.glbWheelNodes.steerLf.push(node);
-          if (/^SUSP_RF/i.test(n)) this.glbWheelNodes.steerRf.push(node);
+          if (!rawWheels.lf && /^WHEEL_LF(_\d+)?$/i.test(n)) rawWheels.lf = node;
+          else if (!rawWheels.rf && /^WHEEL_RF(_\d+)?$/i.test(n)) rawWheels.rf = node;
+          else if (!rawWheels.lr && /^WHEEL_LR(_\d+)?$/i.test(n)) rawWheels.lr = node;
+          else if (!rawWheels.rr && /^WHEEL_RR(_\d+)?$/i.test(n)) rawWheels.rr = node;
         });
 
-        wrapper.add(clone);
+        for (const [key, wheelNode] of Object.entries(rawWheels)) {
+          if (!wheelNode) continue;
+          const wBox = new THREE.Box3().setFromObject(wheelNode);
+          if (wBox.isEmpty()) continue;
+          const hubCenter = wBox.getCenter(new THREE.Vector3());
+
+          const steerPivot = new THREE.Group();
+          steerPivot.position.copy(hubCenter);
+          const spinPivot = new THREE.Group();
+          steerPivot.add(spinPivot);
+          wrapper.add(steerPivot);
+          wrapper.updateMatrixWorld(true);
+
+          spinPivot.attach(wheelNode);
+          this.glbWheelNodes[key].push({ steerPivot, spinPivot });
+        }
+
         this.bodyGroup.add(wrapper);
 
         // Se il modello GLB ha già le sue ruote 3D (come la Ferrari 499P), mostra le ruote del telaio solo a carrozzeria smontata!
@@ -450,7 +469,7 @@ export class MiniZCar {
 
   resetOnTrack(x, z, heading) {
     this.state.x = x;
-    this.state.y = 0.014;
+    this.state.y = 0.008;
     this.state.z = z;
     this.state.vx = 0;
     this.state.vz = 0;
@@ -458,6 +477,8 @@ export class MiniZCar {
     this.state.lateralSpeed = 0;
     this.state.heading = heading;
     this.state.angularVel = 0;
+    this.state.steerAngle = 0;
+    this.state.wheelSpin = 0;
     this.state.roll = 0;
     this.state.pitch = 0;
     this.state.isFlipped = false;
@@ -654,20 +675,20 @@ export class MiniZCar {
       this.chassisWheelMeshes.rr.children[0].rotation.x = this.state.wheelSpin;
     }
 
-    // Ruote del modello 3D GLB (es. Ferrari 499P)
-    for (const n of this.glbWheelNodes.lf) {
-      n.rotation.y = this.state.steerAngle;
-      n.rotation.x = this.state.wheelSpin;
+    // Ruote del modello 3D GLB (es. Ferrari 499P) imperniate sul proprio mozzo
+    for (const w of this.glbWheelNodes.lf) {
+      w.steerPivot.rotation.y = this.state.steerAngle;
+      w.spinPivot.rotation.x = this.state.wheelSpin;
     }
-    for (const n of this.glbWheelNodes.rf) {
-      n.rotation.y = this.state.steerAngle;
-      n.rotation.x = this.state.wheelSpin;
+    for (const w of this.glbWheelNodes.rf) {
+      w.steerPivot.rotation.y = this.state.steerAngle;
+      w.spinPivot.rotation.x = this.state.wheelSpin;
     }
-    for (const n of this.glbWheelNodes.lr) {
-      n.rotation.x = this.state.wheelSpin;
+    for (const w of this.glbWheelNodes.lr) {
+      w.spinPivot.rotation.x = this.state.wheelSpin;
     }
-    for (const n of this.glbWheelNodes.rr) {
-      n.rotation.x = this.state.wheelSpin;
+    for (const w of this.glbWheelNodes.rr) {
+      w.spinPivot.rotation.x = this.state.wheelSpin;
     }
 
     // Luci stop rosse

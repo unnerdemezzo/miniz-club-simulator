@@ -144,8 +144,11 @@
         <button type="button" class="cam-pill" data-cam="chase_drive">Inseguimento</button>
       </div>
       <div class="quick-utility-row">
+        <button type="button" id="btn-restart-race" class="utility-btn" title="Rimetti l'auto sulla linea di partenza e azzera il cronometro (Tasto Spazio)">
+          🔄 Riavvia Gara (Spazio)
+        </button>
         <button type="button" id="btn-marshal-reset" class="utility-btn" title="Il commissario rimette dritta la Mini-Z in pista (Tasto R)">
-          🦺 Chiama Commissario (R)
+          🦺 Commissario (R)
         </button>
         <button type="button" id="btn-toggle-shell-quick" class="utility-btn" title="Mostra o nascondi la carrozzeria sopra il telaio">
           🔍 Togli Carrozzeria
@@ -408,9 +411,16 @@
 
             <!-- Colonna Destra: Assegnazione Tasti Joypad & Test in Diretta -->
             <div class="ctrl-col">
-              <h4>🎮 Impostazione Tasti &amp; Calibrazione in Diretta</h4>
+              <h4>🎮 Scelta Periferica, Tasti &amp; Calibrazione in Diretta</h4>
+              <div class="setup-field" style="margin-bottom: 10px;">
+                <label>🕹️ Scegli quale Periferica USB usare (Ignora Button Box in automatico)</label>
+                <select id="sel-gamepad-device">
+                  <option value="auto"> Automatico (Joypad / Radiocomando — Ignora Button Box)</option>
+                  <option value="keyboard">⌨️ Solo Tastiera (Ignora tutte le periferiche USB)</option>
+                </select>
+              </div>
               <p id="pad-detected-banner" class="pad-status-box">
-                Muovi o premi un tasto sul tuo Joypad per rilevarlo automaticamente.
+                Muovi o premi un tasto sul tuo Joypad per rilevarlo automaticamente (le Button Box vengono ignorate).
               </p>
 
               <!-- Barre di prova in tempo reale dentro il menu -->

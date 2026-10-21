@@ -300,14 +300,23 @@ class MiniZSimulatorApp {
       });
     });
 
-    // Pulsante Chiama Commissario (R) e Togli Carrozzeria rapido
+    // Pulsanti Riavvia Gara (Spazio), Chiama Commissario (R) e Togli Carrozzeria rapido
     this.controller.onMarshalPressed = () => this.triggerMarshalReset();
+    this.controller.onRestartRacePressed = () => this.restartRace();
     this.controller.onCameraPressed = () => this.cycleDriveCameraMode();
     this.controller.onReplayPressed = () => this.toggleReplayMode();
+    this.controller.onDevicesChanged = () => this.refreshGamepadDeviceSelect();
 
+    document.getElementById('btn-restart-race')?.addEventListener('click', () => this.restartRace());
     document.getElementById('btn-marshal-reset')?.addEventListener('click', () => this.triggerMarshalReset());
     document.getElementById('btn-toggle-shell-quick')?.addEventListener('click', () => this.toggleNakedChassis());
     document.getElementById('btn-Toggle-naked-chassis')?.addEventListener('click', () => this.toggleNakedChassis());
+
+    document.getElementById('sel-gamepad-device')?.addEventListener('change', (e) => {
+      this.controller.preferredDevice = e.target.value;
+      this.controller.selectActivePad();
+      this.refreshGamepadDeviceSelect();
+    });
 
     // Scheda 1: Piste RCP e inversione direzione
     document.getElementById('chk-reverse-track')?.addEventListener('change', (e) => {
@@ -382,6 +391,39 @@ class MiniZSimulatorApp {
     const modes = ['stand_normal', 'stand_zoom', 'pit_bench', 'chase_drive'];
     const next = modes[(modes.indexOf(this.driveCameraMode) + 1) % modes.length];
     this.setDriveCameraMode(next);
+  }
+
+  restartRace() {
+    if (!this.trackData || !this.car) return;
+    this.lapNumber = 0;
+    this.lastLapSec = null;
+    this.currentLapSec = 0;
+    this.timerRunning = false;
+    this.club.lastBridgeSide = null;
+    this.club.lapArmed = false;
+    this.club.spawnAiCars();
+    this.club.updateBridgeDisplay(0, null, this.bestLapSec);
+    this.updateTimingHUD();
+    this.car.resetOnTrack(this.trackData.startX, this.trackData.startZ, this.trackData.startHeading);
+    this.replay.clear();
+    this.sound.speak('Gara riavviata! Mini-Z allineata sulla griglia di partenza, cronometro azzerato!', 'high');
+  }
+
+  refreshGamepadDeviceSelect() {
+    const sel = document.getElementById('sel-gamepad-device');
+    if (!sel) return;
+    const devices = this.controller.getConnectedDevices();
+    const curVal = this.controller.preferredDevice || 'auto';
+    const options = [
+      `<option value="auto">🔄 Automatico (Joypad / Radiocomando — Ignora Button Box)</option>`,
+      `<option value="keyboard">⌨️ Solo Tastiera (Ignora tutte le periferiche USB)</option>`
+    ];
+    for (const d of devices) {
+      const tag = d.isButtonBox ? ' [Button Box ignorata in Auto]' : '';
+      options.push(`<option value="${d.index}">🎮 USB #${d.index + 1}: ${d.id.slice(0, 48)}${tag}</option>`);
+    }
+    sel.innerHTML = options.join('');
+    sel.value = curVal;
   }
 
   triggerMarshalReset() {
@@ -755,6 +797,8 @@ class MiniZSimulatorApp {
     if (invS) invS.checked = Boolean(ctrl.invertSteering);
     const invT = document.getElementById('chk-inv-thr');
     if (invT) invT.checked = Boolean(ctrl.invertThrottle);
+
+    this.refreshGamepadDeviceSelect();
 
     // Etichette pulsanti mappatura Joypad
     const b = ctrl.Bindings;

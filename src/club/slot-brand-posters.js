@@ -3,10 +3,10 @@ import { FLOOR, ROOM } from './config.js';
 import { MAX_ANISO } from './util.js';
 
 export const SLOT_BRAND_POSTERS = [
-  { id: 'nsr', name: 'KYOSHO MINI-Z', position: [-2.6, FLOOR + 2.55, ROOM.z0 + 0.026], angle: 0 },
-  { id: 'slotit', name: 'PN RACING', position: [4.5, FLOOR + 2.55, ROOM.z0 + 0.026], angle: 0 },
-  { id: 'scaleauto', name: 'RCP TRACK', position: [ROOM.x1 - 0.026, FLOOR + 2.42, -4.2], angle: -Math.PI / 2 },
-  { id: 'polistil', name: 'ATOMIC RC', position: [ROOM.x1 - 0.026, FLOOR + 2.42, -6.6], angle: -Math.PI / 2 },
+  { id: 'nsr', name: 'KYOSHO MINI-Z', position: [-2.7, FLOOR + 2.65, ROOM.z1 - 0.026], angle: Math.PI },
+  { id: 'slotit', name: 'PN RACING', position: [2.3, FLOOR + 2.65, ROOM.z1 - 0.026], angle: Math.PI },
+  { id: 'scaleauto', name: 'RCP TRACK', position: [ROOM.x1 - 0.026, FLOOR + 2.8, -3.1], angle: -Math.PI / 2 },
+  { id: 'polistil', name: 'ATOMIC RC', position: [ROOM.x1 - 0.026, FLOOR + 2.8, 0.2], angle: -Math.PI / 2 }
 ];
 export const WOOD_SLOT_BRAND_POSTERS = SLOT_BRAND_POSTERS;
 
