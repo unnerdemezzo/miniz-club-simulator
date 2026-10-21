@@ -43,9 +43,9 @@ export class MiniZCar {
 
     // Stato fisico in scala reale (metri, radianti, m/s)
     this.state = {
-      x: -1.1,
-      y: 0,
-      z: 1.42,
+      x: 2.45,
+      y: 0.014,
+      z: 0.35,
       vx: 0,
       vz: 0,
       speed: 0,
@@ -450,7 +450,7 @@ export class MiniZCar {
 
   resetOnTrack(x, z, heading) {
     this.state.x = x;
-    this.state.y = 0;
+    this.state.y = 0.014;
     this.state.z = z;
     this.state.vx = 0;
     this.state.vz = 0;

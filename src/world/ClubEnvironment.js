@@ -1,530 +1,453 @@
 import * as THREE from 'three';
-import { REAL_SCALE } from '../data/parts.js';
 import { TRACK_LAYOUTS } from '../data/tracks.js';
+import { BOARD, DRIVERS, FLOOR, LANES, ROOM, ROST } from '../club/config.js';
+import { canvasTex, clamp, normalFromHeight, rng, speckle } from '../club/util.js';
+import { makeMaterials } from '../club/materials.js';
+import { clubWallMaterial, ROOM_WALL_COLORS } from '../club/room-wall.js';
+import * as B from '../club/banners.js';
+import { makeClubDetails, createStationDisplays, printBoxFace } from '../club/club-details.js';
+import { buildBenchEquipment, buildClubAmenities } from '../club/club-workshop.js';
+import { makeWaterCooler } from '../club/water-cooler.js';
+import { buildRaceControl } from '../club/race-control.js';
+import { buildClosedRoomDoor, buildWoodWorkshopWall } from '../club/club-wall-details.js';
+import { buildSlotBrandPosters, WOOD_SLOT_BRAND_POSTERS } from '../club/slot-brand-posters.js';
+import { buildTrackSkirt } from '../club/track-skirts.js';
+import { DRIVER_CAST } from '../club/character-cast.js';
+import { makeRealisticPilot } from '../club/realistic-pilot.js';
+import { makePerson } from '../club/people.js';
+import { buildRoomMarshals } from '../club/room-marshals.js';
+import { buildRoomGuests } from '../club/room-guests.js';
+import { ROOM_LINK } from '../club/club-tracks.js';
+import { makeCar } from '../club/car.js';
+
+const R = rng(21);
 
 export class ClubEnvironment {
-  constructor(scene) {
+  constructor(scene, renderer = null) {
     this.scene = scene;
+    this.renderer = renderer;
+    this.M = makeMaterials();
+
     this.clubGroup = new THREE.Group();
+    this.clubGroup.name = 'Sala Mini-Z RC Club';
     this.trackGroup = new THREE.Group();
+    this.trackGroup.name = 'Tracciato Kyosho RCP';
+    this.aiCarsGroup = new THREE.Group();
+    this.aiCarsGroup.name = 'Avversari AI Mini-Z';
+
     this.scene.add(this.clubGroup);
     this.scene.add(this.trackGroup);
+    this.scene.add(this.aiCarsGroup);
 
-    // Posizione occhi del pilota sul palco (90cm pedana + 168cm altezza occhi = 2.58m da terra)
-    this.driverEyePos = new THREE.Vector3(0.0, REAL_SCALE.DRIVER_EYE_HEIGHT, 2.08);
+    // Coordinate reali del Palco Guida (identiche a Slot-Car!):
+    // Tavolo pista a y = 0.00m, pavimento sala a FLOOR = -0.85m, pedana piloti a ROST.top = -0.40m (+45cm sul pavimento),
+    // occhi del pilota a y = ROST.top + 1.64 = +1.24m sopra il tavolo, z = ROST.z0 + 0.36 = 1.91m!
+    this.driverEyePos = new THREE.Vector3(2.45, ROST.top + 1.64, ROST.z0 + 0.36);
 
-    // Riferimenti personaggi animati
-    this.standPilots = [];
+    this.podiumPilots = [];
     this.marshals = [];
-    this.pitMechanics = [];
-    this.raceDirector = null;
+    this.backgroundPeople = [];
+    this.raceControl = null;
+    this.monitor = null;
+    this.stationDisplays = null;
+    this.aiCars = [];
+
     this.bridgeScreenCanvas = null;
     this.bridgeScreenCtx = null;
     this.bridgeScreenTex = null;
 
-    // Dati geometrici pista attiva per collisioni e cronometro
     this.activeTrackSpec = null;
+    this.curve = null;
     this.curveSamples = [];
+    this.totalTrackLength = 18.0;
     this.lastBridgeSide = null;
     this.lapArmed = false;
 
-    this.rcpTexture = this.createRcpTileTexture();
-    this.buildIndoorHall();
-    this.buildDriverStandAndPilots();
-    this.buildRaceControlConsole();
-    this.buildPitWorkbenches();
-  }
+    this.rcpTexture = this.createHighResRcpTexture();
+    this.rcpNormalMap = this.createFoamNormalMap();
 
-  // Crea la texture autentica delle mattonelle in gomma Kyosho RCP 50x50cm a incastro
-  createRcpTileTexture() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = '#222631';
-    ctx.fillRect(0, 0, 512, 512);
-
-    // Micro-grana della gomma EVA
-    for (let i = 0; i < 6000; i++) {
-      const x = Math.random() * 512;
-      const y = Math.random() * 512;
-      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.08)';
-      ctx.fillRect(x, y, 2, 2);
+    if (this.renderer) {
+      this.setupEnvironmentMap(this.renderer);
     }
 
-    // Giuntura mattonelle 50x50cm a puzzle
-    ctx.strokeStyle = '#161922';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, 508, 508);
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(6, 6, 500, 500);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(14, 10);
-    return tex;
+    this.buildDetailedClubRoom();
   }
 
-  buildIndoorHall() {
-    // Pavimento del capannone (15m x 11.5m)
-    const floorGeo = new THREE.PlaneGeometry(15.5, 11.5);
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x1a202c,
-      roughness: 0.55,
-      metalness: 0.1
-    });
-    const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.015;
-    floor.receiveShadow = true;
-    this.clubGroup.add(floor);
-
-    // Pareti perimetrali del club (altezza 4.0 metri)
-    const wallMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      roughness: 0.75
-    });
-    const backWall = new THREE.Mesh(new THREE.BoxGeometry(15.5, 4.2, 0.2), wallMat);
-    backWall.position.set(0, 2.1, -5.6);
-
-    const frontWall = new THREE.Mesh(new THREE.BoxGeometry(15.5, 4.2, 0.2), wallMat);
-    frontWall.position.set(0, 2.1, 5.6);
-
-    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.2, 11.5), wallMat);
-    leftWall.position.set(-7.65, 2.1, 0);
-
-    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.2, 11.5), wallMat);
-    rightWall.position.set(7.65, 2.1, 0);
-
-    this.clubGroup.add(backWall, frontWall, leftWall, rightWall);
-
-    // Striscia racing rossa e bianca lungo le pareti del club
-    const stripeMat = new THREE.MeshBasicMaterial({ color: 0xe11d48 });
-    const backStripe = new THREE.Mesh(new THREE.BoxGeometry(15.2, 0.14, 0.02), stripeMat);
-    backStripe.position.set(0, 1.15, -5.48);
-    this.clubGroup.add(backStripe);
-
-    // Striscioni da gara sulla parete di fondo (visibili alzando lo sguardo dal palco)
-    this.addWallBanner(0, 2.55, -5.46, 4.4, 0.95, 'KYOSHO MINI-Z CLUB ARENA', 'CAMPIONATO INDOOR SCALA 1:27 • RCP TRACK', '#dc2626');
-    this.addWallBanner(-4.9, 2.55, -5.46, 3.1, 0.85, 'BOX & OFFICINA', 'ASSETTO • GOMME • BRUSHLESS', '#0284c7');
-    this.addWallBanner(4.9, 2.55, -5.46, 3.1, 0.85, 'DIREZIONE Gara', 'TELEMETRIA IC-TAG LIVE', '#16a34a');
-
-    // Soffitto con travi reticolari e plafoniere a LED al neon (a 3.95m da terra)
-    const beamMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 });
-    const neonMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
-
-    for (let z = -3.8; z <= 3.8; z += 1.9) {
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(15.2, 0.12, 0.12), beamMat);
-      beam.position.set(0, 3.92, z);
-      this.clubGroup.add(beam);
-
-      for (let x = -4.2; x <= 4.2; x += 2.8) {
-        const neonFixture = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.22), neonMat);
-        neonFixture.position.set(x, 3.84, z);
-        this.clubGroup.add(neonFixture);
+  setupEnvironmentMap(renderer) {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0x1c1e24);
+    const panelMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.7, 3.9, 4.1) });
+    for (let i = 0; i < 6; i++) {
+      for (let j = 0; j < 4; j++) {
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.55), panelMat);
+        p.position.set(-3.5 + i * 2.4, 3.2, -6.5 + j * 3.1);
+        p.rotation.x = Math.PI / 2;
+        envScene.add(p);
       }
     }
+    const wallM = new THREE.MeshBasicMaterial({ color: 0x3b3832, side: THREE.BackSide });
+    const box = new THREE.Mesh(new THREE.BoxGeometry(16, 4, 13), wallM);
+    box.position.set(2.5, 1.2, -1.8);
+    envScene.add(box);
+    const floorM = new THREE.MeshBasicMaterial({ color: 0x261c12 });
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(16, 13), floorM);
+    fl.rotation.x = -Math.PI / 2;
+    fl.position.set(2.5, -0.8, -1.8);
+    envScene.add(fl);
+    this.scene.environment = pmrem.fromScene(envScene, 0.035).texture;
+    pmrem.dispose();
   }
 
-  addWallBanner(x, y, z, w, h, title, subtitle, accentHex) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = '#090d16';
-    ctx.fillRect(0, 0, 1024, 256);
-    ctx.fillStyle = accentHex;
-    ctx.fillRect(0, 0, 28, 256);
-    ctx.fillRect(996, 0, 28, 256);
-    ctx.strokeStyle = accentHex;
-    ctx.lineWidth = 6;
-    ctx.strokeRect(6, 6, 1012, 244);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 66px "Segoe UI", Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(title.toUpperCase(), 512, 125);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '700 34px "Segoe UI", Arial, sans-serif';
-    ctx.fillText(subtitle, 512, 195);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, h),
-      new THREE.MeshBasicMaterial({ map: tex })
-    );
-    mesh.position.set(x, y, z);
-    this.clubGroup.add(mesh);
+  createHighResRcpTexture() {
+    return canvasTex(512, 512, (g, w, h) => {
+      const r = rng(202);
+      g.fillStyle = '#252830';
+      g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 18000; i++) {
+        const v = 28 + ((r() * 22) | 0);
+        g.fillStyle = `rgba(${v},${v + 2},${v + 5},0.35)`;
+        g.fillRect((r() * w) | 0, (r() * h) | 0, 2, 2);
+      }
+      g.strokeStyle = 'rgba(14, 16, 20, 0.55)';
+      g.lineWidth = 3;
+      g.strokeRect(0, 0, w, h);
+      g.strokeRect(w / 2, 0, w / 2, h / 2);
+      g.strokeRect(0, h / 2, w / 2, h / 2);
+    }, { repeat: [18, 12] });
   }
 
-  // Costruisce il Palco di Guida rialzato (0.90m da terra) e i piloti con radiocomando a volantino in mano!
-  buildDriverStandAndPilots() {
-    const standGroup = new THREE.Group();
-    const standWidth = 4.6;
-    const standDepth = 1.25;
-    const standHeight = REAL_SCALE.STAND_HEIGHT; // 0.90m
+  createFoamNormalMap() {
+    const hCanvas = document.createElement('canvas');
+    hCanvas.width = 256;
+    hCanvas.height = 256;
+    const g = hCanvas.getContext('2d');
+    const r = rng(101);
+    g.fillStyle = '#808080';
+    g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 14000; i++) {
+      const v = 110 + ((r() * 36) | 0);
+      g.fillStyle = `rgb(${v},${v},${v})`;
+      g.fillRect((r() * 256) | 0, (r() * 256) | 0, 2, 2);
+    }
+    g.strokeStyle = 'rgba(40,40,40,0.45)';
+    g.lineWidth = 2;
+    g.strokeRect(1, 1, 254, 254);
+    return normalFromHeight(hCanvas, 1.8, [22, 22]);
+  }
 
-    const deckMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65 });
-    const railMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.75, roughness: 0.25 });
-    const gripStripMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 });
+  buildDetailedClubRoom() {
+    const M = this.M;
+    const root = this.clubGroup;
+    const posterLoader = new THREE.TextureLoader();
+    const details = makeClubDetails(LANES);
 
-    // Struttura pedana palco (a z = 2.65m, bordo anteriore a z = 2.025m)
-    const platform = new THREE.Mesh(new THREE.BoxGeometry(standWidth, standHeight, standDepth), deckMat);
-    platform.position.set(0, standHeight / 2, 2.65);
-    platform.receiveShadow = true;
-    standGroup.add(platform);
+    const add = (geo, mat, x, y, z, o = {}) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      if (o.ry) m.rotation.y = o.ry;
+      if (o.rx) m.rotation.x = o.rx;
+      if (o.rz) m.rotation.z = o.rz;
+      m.castShadow = o.cast !== false;
+      m.receiveShadow = true;
+      (o.parent || root).add(m);
+      return m;
+    };
+    const box = (w, h, d, mat, x, y, z, o) => add(new THREE.BoxGeometry(w, h, d), mat, x, y, z, o);
+    const cyl = (rt, rb, h, mat, x, y, z, o = {}) => add(new THREE.CylinderGeometry(rt, rb, h, o.seg || 20), mat, x, y, z, o);
+    const plane = (w, h, mat, x, y, z, o) => add(new THREE.PlaneGeometry(w, h), mat, x, y, z, Object.assign({ cast: false }, o));
 
-    // Striscia gialla antiscivolo sul bordo del palco
-    const safetyEdge = new THREE.Mesh(new THREE.BoxGeometry(standWidth, 0.02, 0.06), gripStripMat);
-    safetyEdge.position.set(0, standHeight + 0.005, 2.06);
-    standGroup.add(safetyEdge);
+    const RX0 = ROOM.x0, RX1 = ROOM.x1, RZ0 = ROOM.z0, RZ1 = ROOM.z1, CEIL = FLOOR + ROOM.h;
+    const RW = RX1 - RX0, RD = RZ1 - RZ0, RCX = (RX0 + RX1) / 2, RCZ = (RZ0 + RZ1) / 2;
+    const BX = (BOARD.x0 + BOARD.x1) / 2, BZ = (BOARD.z0 + BOARD.z1) / 2, BW = BOARD.x1 - BOARD.x0, BD = BOARD.z1 - BOARD.z0;
 
-    // Ringhiera di protezione (alta 1.00m sopra la pedana = 1.90m da terra)
-    const topRail = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, standWidth, 16), railMat);
-    topRail.rotation.z = Math.PI / 2;
-    topRail.position.set(0, standHeight + 0.98, 2.06);
-    standGroup.add(topRail);
+    // 1. Tavolo centrale della pista RCP (BOARD: 10.5 x 6.15m, piano a y = 0)
+    box(BW, 0.04, BD, [M.grassBoard, M.woodDark], BX, -0.02, BZ);
 
-    const midRail = topRail.clone();
-    midRail.position.y = standHeight + 0.52;
-    standGroup.add(midRail);
-
-    for (let x = -2.2; x <= 2.2; x += 1.1) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.0, 12), railMat);
-      post.position.set(x, standHeight + 0.50, 2.06);
-      standGroup.add(post);
+    const fasciaM = new THREE.MeshStandardMaterial({ color: 0x121316, roughness: 0.5 });
+    const fT = 0.024;
+    const outline = [
+      { x: BOARD.x0, z: BOARD.z0 },
+      { x: BOARD.x1, z: BOARD.z0 },
+      { x: BOARD.x1, z: BOARD.z1 },
+      { x: BOARD.x0, z: BOARD.z1 }
+    ];
+    const borders = outline.map((p, i) => {
+      const q = outline[(i + 1) % outline.length], dx = q.x - p.x, dz = q.z - p.z;
+      return [Math.hypot(dx, dz), (p.x + q.x) / 2, (p.z + q.z) / 2, Math.atan2(-dz, dx)];
+    });
+    for (const [w, x, z, ry] of borders) {
+      box(w + fT, 0.16, fT, fasciaM, x, -0.07, z, { ry });
+      const n = Math.floor(w / 1.3), nx = Math.sin(ry), nz = Math.cos(ry), tx = Math.cos(ry), tz = -Math.sin(ry);
+      for (let i = 0; i < n; i++) {
+        const b = B.BRANDS[Math.abs(i + Math.round(ry * 2)) % B.BRANDS.length];
+        const off = (i - (n - 1) / 2) * 1.3;
+        plane(
+          1.1,
+          0.13,
+          new THREE.MeshStandardMaterial({ map: B.brandBoard(b, 1024, 128), roughness: 0.45 }),
+          x + tx * off + nx * 0.014,
+          -0.07,
+          z + tz * off + nz * 0.014,
+          { ry }
+        );
+      }
     }
 
-    // Scaletta laterale per salire sul palco
+    // Telo pieghettato attorno al tavolo (track-skirts.js)
+    buildTrackSkirt(root, outline, 'wood', posterLoader, { top: -0.149, offset: 0.0132 });
+
+    // 2. Sala: pavimento in parquet a FLOOR = -0.85m, pareti intonacate bicolori, porte, controsoffitto LED
+    plane(RW, RD, M.floor, RCX, FLOOR, RCZ, { rx: -Math.PI / 2 });
+    const passage = ROOM_LINK;
+    const wallParts = [
+      [RW, RCX, RZ0, 0],
+      [RW, RCX, RZ1, Math.PI],
+      [passage.z0 - RZ0, RX0, (RZ0 + passage.z0) / 2, Math.PI / 2],
+      [RZ1 - passage.z1, RX0, (passage.z1 + RZ1) / 2, Math.PI / 2],
+      [passage.z0 - RZ0, RX1, (RZ0 + passage.z0) / 2, -Math.PI / 2],
+      [RZ1 - passage.z1, RX1, (passage.z1 + RZ1) / 2, -Math.PI / 2]
+    ];
+    for (const [len, x, z, ry] of wallParts) {
+      plane(len, ROOM.h, clubWallMaterial(M, len), x, FLOOR + ROOM.h / 2, z, { ry });
+      const nx = Math.sin(ry), nz = Math.cos(ry);
+      box(len, 0.05, 0.03, new THREE.MeshStandardMaterial({ color: ROOM_WALL_COLORS.rail, roughness: 0.35 }), x + nx * 0.015, FLOOR + 1.07, z + nz * 0.015, { ry, cast: false });
+      box(len, 0.11, 0.02, new THREE.MeshStandardMaterial({ color: ROOM_WALL_COLORS.skirting, roughness: 0.4 }), x + nx * 0.01, FLOOR + 0.055, z + nz * 0.01, { ry, cast: false });
+    }
+    plane(passage.z1 - passage.z0, ROOM.h - passage.height, new THREE.MeshStandardMaterial({ color: ROOM_WALL_COLORS.upper, roughness: 0.92 }), RX1, FLOOR + passage.height + (ROOM.h - passage.height) / 2, (passage.z0 + passage.z1) / 2, { ry: -Math.PI / 2 });
+    plane(passage.z1 - passage.z0, ROOM.h - passage.height, new THREE.MeshStandardMaterial({ color: ROOM_WALL_COLORS.upper, roughness: 0.92 }), RX0, FLOOR + passage.height + (ROOM.h - passage.height) / 2, (passage.z0 + passage.z1) / 2, { ry: Math.PI / 2 });
+
+    const roomSign = canvasTex(1024, 128, (g, w, h) => {
+      g.fillStyle = '#17202a'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#f3d234'; g.font = `900 72px ${B.FONT}`; g.textAlign = 'center';
+      g.fillText('SALA DRIFT AWD →', w / 2, 92);
+    }, { clamp: true });
+    plane(2.25, 0.23, new THREE.MeshStandardMaterial({ map: roomSign, roughness: 0.7 }), RX1 - 0.012, FLOOR + 2.72, 2.8, { ry: -Math.PI / 2 });
+
+    const rallySign = canvasTex(1024, 128, (g, w, h) => {
+      g.fillStyle = '#17202a'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#f3d234'; g.font = `900 72px ${B.FONT}`; g.textAlign = 'center';
+      g.fillText('← OFFICINA & TEST', w / 2, 92);
+    }, { clamp: true });
+    plane(2.25, 0.23, new THREE.MeshStandardMaterial({ map: rallySign, roughness: 0.7 }), RX0 + 0.02, FLOOR + 2.72, 2.8, { ry: Math.PI / 2 });
+
+    buildClosedRoomDoor(root, { x: RX1, angle: -Math.PI / 2, to: 'Sala Drift' });
+    buildClosedRoomDoor(root, { x: RX0, angle: Math.PI / 2, to: 'Officina' });
+    buildSlotBrandPosters(root, posterLoader, WOOD_SLOT_BRAND_POSTERS);
+
+    // Controsoffitto a quadrotte 60x60 con 24 plafoniere LED
+    const ceilT = canvasTex(256, 256, (g, w, h) => {
+      g.fillStyle = '#c9cac8'; g.fillRect(0, 0, w, h);
+      speckle(g, w, h, 5000, ['rgba(0,0,0,.18)'], 1.1, R);
+      g.strokeStyle = '#8f9295'; g.lineWidth = 6; g.strokeRect(0, 0, w, h);
+    }, { repeat: [RW / 0.6, RD / 0.6] });
+    plane(RW, RD, new THREE.MeshStandardMaterial({ map: ceilT, roughness: 1 }), RCX, CEIL, RCZ, { rx: Math.PI / 2 });
+
+    const panelM = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.7, 3.9, 4.1) });
+    const frameM = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.5 });
+    for (let i = 0; i < 6; i++) {
+      for (let j = 0; j < 4; j++) {
+        const x = -2.4 + i * 1.95, z = -5.4 + j * 2.0;
+        box(1.24, 0.03, 0.64, frameM, x, CEIL - 0.015, z, { cast: false });
+        plane(1.18, 0.58, panelM, x, CEIL - 0.031, z, { rx: Math.PI / 2 });
+      }
+    }
+
+    // 3. Parete di fondo: grande striscione, maxischermo live timing, poster, orologio
+    plane(5.6, 0.7, new THREE.MeshStandardMaterial({ map: B.mainBanner(), roughness: 0.75 }), 2.45, FLOOR + 2.72, RZ0 + 0.02);
+    box(1.92, 1.12, 0.08, new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.25, metalness: 0.3 }), 2.45, FLOOR + 1.82, RZ0 + 0.06);
+    const monCanvas = document.createElement('canvas');
+    monCanvas.width = 1280;
+    monCanvas.height = 720;
+    const monTex = new THREE.CanvasTexture(monCanvas);
+    monTex.colorSpace = THREE.SRGBColorSpace;
+    monTex.anisotropy = 8;
+    const screenM = new THREE.MeshBasicMaterial({ map: monTex, color: new THREE.Color(1.25, 1.25, 1.25) });
+    plane(1.82, 1.024, screenM, 2.45, FLOOR + 1.82, RZ0 + 0.101);
+    this.monitor = { canvas: monCanvas, tex: monTex };
+
+    const posters = [
+      [B.posterCalendar(), -2.9],
+      [B.posterStandings(), -2.1],
+      [B.posterRules(), 6.9],
+      [B.posterOpenDay(), 7.7]
+    ];
+    for (const [t, x] of posters) {
+      box(0.66, 0.91, 0.02, new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4, metalness: 0.4 }), x, FLOOR + 1.8, RZ0 + 0.012, { cast: false });
+      plane(0.62, 0.87, new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.2, clearcoat: 0.6 }), x, FLOOR + 1.8, RZ0 + 0.024);
+    }
+    add(new THREE.CircleGeometry(0.19, 48), new THREE.MeshStandardMaterial({ map: B.clockTex(), roughness: 0.3 }), 9.1, FLOOR + 2.25, RZ0 + 0.03, { cast: false });
+    cyl(0.2, 0.2, 0.04, M.darkMetal, 9.1, FLOOR + 2.25, RZ0 + 0.015, { rx: Math.PI / 2, seg: 48 });
+
+    // 4. Parete attrezzata officina sulla sinistra
+    buildWoodWorkshopWall(root);
+
+    // 5. Parete destra: estintore, bacheca trofei in legno con vetro e coppe tornite, bacheca avvisi in sughero
+    const exM = new THREE.MeshPhysicalMaterial({ color: 0xc0121a, roughness: 0.3, clearcoat: 1 });
+    cyl(0.085, 0.085, 0.52, exM, RX1 - 0.14, FLOOR + 0.36, 0.65);
+    cyl(0.03, 0.035, 0.09, M.blackPlastic, RX1 - 0.14, FLOOR + 0.66, 0.65);
+    const signT = canvasTex(128, 160, (g, w, h) => {
+      g.fillStyle = '#c0121a'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#fff'; g.font = `900 22px ${B.FONT}`; g.textAlign = 'center';
+      g.fillText('ESTINTORE', w / 2, h - 18);
+      g.beginPath(); g.moveTo(40, 110); g.lineTo(88, 110); g.lineTo(80, 40); g.lineTo(48, 40); g.fill();
+    }, { clamp: true });
+    plane(0.2, 0.25, new THREE.MeshStandardMaterial({ map: signT, roughness: 0.5 }), RX1 - 0.005, FLOOR + 1.3, 0.65, { ry: -Math.PI / 2 });
+
+    const wd = M.woodDark;
+    const gold = new THREE.MeshStandardMaterial({ color: 0xd8ac3c, metalness: 1, roughness: 0.18 });
+    const silver = new THREE.MeshStandardMaterial({ color: 0xd0d5da, metalness: 1, roughness: 0.15 });
+    const tx = RX1 - 0.26, tz = -4.2;
+    box(0.42, 0.06, 1.6, wd, tx, FLOOR + 0.03, tz);
+    box(0.42, 0.06, 1.6, wd, tx, FLOOR + 1.96, tz);
+    box(0.04, 1.96, 1.6, wd, RX1 - 0.04, FLOOR + 0.98, tz);
+    for (const dz of [-0.78, 0.78]) box(0.42, 1.96, 0.04, wd, tx, FLOOR + 0.98, tz + dz);
+
+    const cupGeo = new THREE.LatheGeometry(
+      [[0, 0], [0.05, 0], [0.05, 0.012], [0.012, 0.03], [0.01, 0.09], [0.03, 0.1], [0.075, 0.16], [0.08, 0.22], [0.072, 0.22], [0.066, 0.17], [0, 0.15]].map(p => new THREE.Vector2(p[0], p[1])),
+      32
+    );
+    for (const y of [0.52, 0.98, 1.44]) {
+      box(0.36, 0.015, 1.5, new THREE.MeshPhysicalMaterial({ color: 0xdfeaf0, transmission: 0.9, roughness: 0.05, thickness: 0.01, transparent: true, opacity: 0.6 }), tx, FLOOR + y, tz, { cast: false });
+      for (let k = 0; k < 4; k++) {
+        const s = 0.8 + ((k * 7 + y * 10) % 5) * 0.12;
+        const cup = add(cupGeo, (k + Math.round(y * 10)) % 3 ? gold : silver, tx - 0.03, FLOOR + y + 0.008, tz - 0.54 + k * 0.36);
+        cup.scale.setScalar(s);
+      }
+    }
+    plane(1.5, 1.86, new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.02, transmission: 1, thickness: 0.004, transparent: true, opacity: 0.25 }), RX1 - 0.47, FLOOR + 0.98, tz, { ry: -Math.PI / 2 });
+
+    const corkT = canvasTex(512, 320, (g, w, h) => {
+      g.fillStyle = '#b4875a'; g.fillRect(0, 0, w, h);
+      speckle(g, w, h, 20000, ['#8c6238', '#caa27a', '#7a5430'], 1.6, R);
+      const notes = [['#fff', 'ISCRIZIONI MINI-Z CUP'], ['#ffe98a', 'Turni pulizia RCP'], ['#fff', 'Vendo motori 8500KV'], ['#bfe3ff', 'Setup molle MR-04'], ['#fff', 'Quote sociali 2026']];
+      notes.forEach((n, i) => {
+        const x = 20 + (i % 3) * 165, y = 20 + Math.floor(i / 3) * 150;
+        g.save(); g.translate(x + 70, y + 60); g.rotate((R() - 0.5) * 0.12);
+        g.fillStyle = n[0]; g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 6; g.fillRect(-70, -60, 140, 120); g.shadowBlur = 0;
+        g.fillStyle = '#222'; g.font = `700 14px ${B.FONT}`; g.fillText(n[1], -62, -30);
+        for (let l = 0; l < 5; l++) { g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(-60, -12 + l * 14, 90 + R() * 20, 3); }
+        g.fillStyle = '#c8141b'; g.beginPath(); g.arc(0, -52, 6, 0, 7); g.fill();
+        g.restore();
+      });
+    }, { clamp: true });
+    box(0.04, 0.9, 1.44, new THREE.MeshStandardMaterial({ color: 0x5a3d25, roughness: 0.5 }), RX1 - 0.03, FLOOR + 1.6, -1.2, { cast: false });
+    plane(1.36, 0.82, new THREE.MeshStandardMaterial({ map: corkT, roughness: 0.95 }), RX1 - 0.065, FLOOR + 1.6, -1.2, { ry: -Math.PI / 2 });
+
+    // 6. Tre Banchi Box completi di saldatore 320°C, lampada articolata, alimentatore, multimetro, auto in manutenzione e meccanico seduto (club-workshop.js)
+    const benchTop = new THREE.MeshStandardMaterial({ map: M.wood.map, roughness: 0.5 });
+    const matM = new THREE.MeshStandardMaterial({ map: details.benchMat, roughness: 0.95 });
+    const boxCols = [0xc8141b, 0x1f4fd1, 0xf2c230, 0x222222, 0xeeeeee, 0x0f7a36];
+    for (const bz of [-5.4, -2.6, 0.2]) {
+      const bx = RX0 + 0.55;
+      box(0.86, 0.05, 2.0, benchTop, bx, FLOOR + 0.9, bz);
+      for (const dx of [-0.38, 0.38]) for (const dz of [-0.95, 0.95]) box(0.04, 0.88, 0.04, M.darkMetal, bx + dx, FLOOR + 0.44, bz + dz);
+      box(0.8, 0.02, 1.9, M.darkMetal, bx, FLOOR + 0.2, bz);
+      for (let k = 0; k < 4; k++) {
+        box(0.22, 0.12, 0.3, new THREE.MeshStandardMaterial({ color: boxCols[(k + Math.abs(Math.round(bz))) % 6], roughness: 0.6 }), bx - 0.15, FLOOR + 0.27, bz - 0.7 + k * 0.45);
+      }
+      printBoxFace(box(0.5, 0.004, 0.7, matM, bx + 0.05, FLOOR + 0.927, bz - 0.2), 2);
+      buildBenchEquipment(root, M, {
+        x: bx,
+        y: FLOOR + 0.927,
+        z: bz - 0.15,
+        room: 'Legno',
+        car: true,
+        worker: bz === -5.4 ? { x: 0.8, z: 0.45, rotation: Math.PI / 2, stool: false } : null
+      });
+      cyl(0.17, 0.17, 0.05, new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.6 }), bx + 0.8, FLOOR + (bz === -5.4 ? 0.61 : 0.66), bz + 0.3, { seg: 28 });
+      cyl(0.025, 0.025, 0.62, M.metal, bx + 0.8, FLOOR + 0.32, bz + 0.3);
+      cyl(0.22, 0.22, 0.02, M.darkMetal, bx + 0.8, FLOOR + 0.01, bz + 0.3, { seg: 28 });
+    }
+    buildClubAmenities(root, M, 'Legno');
+
+    // Scaffale con le scatole delle auto Mini-Z
+    const shelfX = RX1 - 0.2;
+    const boxLabelMats = details.boxLabels.map(map => new THREE.MeshStandardMaterial({ map, roughness: 0.82 }));
+    for (let lv = 0; lv < 5; lv++) {
+      box(0.36, 0.02, 2.0, M.woodDark, shelfX, FLOOR + 0.3 + lv * 0.4, -7.1, { cast: false });
+      for (let k = 0; k < 7; k++) {
+        const col = boxCols[(k * 3 + lv) % 6];
+        printBoxFace(
+          box(0.2, 0.08, 0.26, boxLabelMats[(k + lv) % 4], shelfX, FLOOR + 0.35 + lv * 0.4, -7.95 + k * 0.28),
+          1,
+          [(boxCols.indexOf(col) + 0.5) / 6, 0.125],
+          [0, 0.25, 1, 0.75]
+        );
+      }
+    }
+    for (const dz of [-1.0, 1.0]) box(0.36, 2.0, 0.03, M.woodDark, shelfX, FLOOR + 1.0, -7.1 + dz);
+
+    // 7. Postazione Direzione Gara con Direttore di Gara 3D e 3 monitor live + boccione acqua
+    this.raceControl = buildRaceControl(root, M, 'wood', this.monitor, details, posterLoader);
+    if (this.raceControl.director) {
+      this.backgroundPeople.push(this.raceControl.director);
+    }
+    const cooler = makeWaterCooler();
+    cooler.position.set(RX1 - 0.31, FLOOR, 1.15);
+    cooler.rotation.y = -Math.PI / 2;
+    root.add(cooler);
+
+    // 8. Podio dei Piloti (ROST: top = -0.40m, 45 cm sopra il pavimento, identico a Slot-Car)
+    box(ROST.x1 - ROST.x0, ROST.top - FLOOR, ROST.z1 - ROST.z0, M.woodDark, (ROST.x0 + ROST.x1) / 2, (ROST.top + FLOOR) / 2, (ROST.z0 + ROST.z1) / 2);
+    box(ROST.x1 - ROST.x0 - 0.02, 0.012, ROST.z1 - ROST.z0 - 0.02, M.carpet, (ROST.x0 + ROST.x1) / 2, ROST.top + 0.006, (ROST.z0 + ROST.z1) / 2);
+    for (let i = 0; i < 3; i++) {
+      box(0.34, ((ROST.top - FLOOR) * (i + 1)) / 3, ROST.z1 - ROST.z0, M.woodDark, ROST.x1 + 0.5 - i * 0.33, FLOOR + ((ROST.top - FLOOR) * (i + 1)) / 6, (ROST.z0 + ROST.z1) / 2);
+    }
+
+    const railY = ROST.top + 1.0, railZ = ROST.z0 + 0.08;
+    const railM = new THREE.MeshStandardMaterial({ color: 0xb9bec5, metalness: 1, roughness: 0.28 });
+    cyl(0.022, 0.022, ROST.x1 - ROST.x0, railM, (ROST.x0 + ROST.x1) / 2, railY + 0.04, railZ, { rz: Math.PI / 2, seg: 24 });
+    box(ROST.x1 - ROST.x0, 0.03, 0.2, M.woodDark, (ROST.x0 + ROST.x1) / 2, railY, railZ);
+    for (let x = ROST.x0 + 0.08; x <= ROST.x1; x += 1.05) {
+      cyl(0.02, 0.02, 1.0, railM, x, ROST.top + 0.5, railZ);
+    }
+
+    this.stationDisplays = createStationDisplays(LANES);
+    const stationScreenM = new THREE.MeshBasicMaterial({ map: this.stationDisplays.tex });
+    LANES.forEach((L, i) => {
+      const x = ROST.x0 + 0.85 + i * 1.45;
+      printBoxFace(box(0.2, 0.012, 0.12, new THREE.MeshStandardMaterial({ map: details.stationLabels[i], roughness: 0.65 }), x, railY + 0.021, railZ), 2, [0.01, 0.5]);
+      box(0.1, 0.07, 0.07, M.blackPlastic, x + 0.14, railY + 0.05, railZ);
+      cyl(0.012, 0.012, 0.012, M.metal, x + 0.14, railY + 0.05, railZ + 0.04, { rx: Math.PI / 2 });
+      box(0.16, 0.08, 0.03, M.blackPlastic, x - 0.12, railY + 0.07, railZ + 0.055);
+      const geometry = new THREE.PlaneGeometry(0.12, 0.06), uv = geometry.attributes.uv;
+      for (let j = 0; j < uv.count; j++) uv.setX(j, (uv.getX(j) + i) / LANES.length);
+      add(geometry, stationScreenM, x - 0.12, railY + 0.07, railZ + 0.071, { cast: false });
+    });
+
+    // 9. Piloti 3D realistici sul podio + Commissari sugli sgabelli + Ospiti nella sala
+    const person = options => makeRealisticPilot({ ...options, fallback: () => makePerson(options) });
+    this.podiumPilots = [];
     for (let i = 0; i < 4; i++) {
-      const step = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.06, 0.28), deckMat);
-      step.position.set(-2.72, (i + 1) * 0.22, 2.25 + i * 0.25);
-      standGroup.add(step);
-    }
-
-    // Piloti sul palco accanto a te (altezza reale 1.75m sopra la pedana da 0.90m!)
-    // Tu sei al centro (x = 0). Accanto a te a sinistra e a destra ci sono gli altri piloti col radiocomando in mano!
-    const pilotConfigs = [
-      { x: -1.08, z: 2.32, shirtColor: 0xdc2626, capColor: 0x111827, name: 'Marco' },
-      { x:  1.08, z: 2.32, shirtColor: 0x0284c7, capColor: 0xeab308, name: 'Luca' },
-      { x: -1.95, z: 2.38, shirtColor: 0x16a34a, capColor: 0xf8fafc, name: 'Davide' }
-    ];
-
-    for (const cfg of pilotConfigs) {
-      const pilot = this.createHumanFigure({
-        shirtColor: cfg.shirtColor,
-        pantsColor: 0x1e293b,
-        capColor: cfg.capColor,
-        hasTransmitter: true,
-        isSeated: false
+      const sx = ROST.x0 + 0.85 + i * 1.45;
+      const p = person({
+        ...DRIVER_CAST[i],
+        shirt: [0xd9161d, 0xf5f6f8, 0x118243, 0x1658c9][i],
+        print: i === 1 ? 'dark' : 'light',
+        hair: [0x2a1a10, 0x6b4a2a, 0x111111, 0x8a5a2b][i],
+        skin: [0xe8c4a8, 0xd9a987, 0xc58c67, 0xf0d0b8][i]
       });
-      pilot.group.position.set(cfg.x, standHeight, cfg.z);
-      pilot.group.rotation.y = Math.PI; // Guarda verso -Z (la pista!)
-      standGroup.add(pilot.group);
-      this.standPilots.push(pilot);
+      p.position.set(sx, ROST.top + 0.012, ROST.z0 + 0.42);
+      p.rotation.y = 0;
+      root.add(p);
+      this.podiumPilots.push(p);
+      this.backgroundPeople.push(p);
     }
 
-    this.clubGroup.add(standGroup);
+    const clubCtx = {
+      trackId: 'wood',
+      marshals: this.marshals,
+      backgroundPeople: this.backgroundPeople
+    };
+    buildRoomMarshals(root, clubCtx, M);
+    buildRoomGuests(root, clubCtx, person);
   }
 
-  // Crea un personaggio 3D in scala reale (1.75m in piedi, con radiocomando RC a volantino di 22cm!)
-  createHumanFigure({ shirtColor = 0x2563eb, pantsColor = 0x1e293b, capColor = null, isMarshal = false, hasTransmitter = false, isSeated = false }) {
-    const group = new THREE.Group();
-
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xf1c27d, roughness: 0.6 });
-    const shirtMat = new THREE.MeshStandardMaterial({
-      color: isMarshal ? 0xfacc15 : shirtColor,
-      roughness: 0.55
-    });
-    const pantsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.7 });
-    const shoeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
-
-    if (isSeated) {
-      // Personaggio seduto al banco da lavoro (sedia a 0.45m, altezza testa ~1.32m)
-      const hipY = 0.46;
-      const thighL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 0.42), pantsMat);
-      thighL.position.set(-0.10, hipY, 0.16);
-      const thighR = thighL.clone();
-      thighR.position.x = 0.10;
-
-      const calfL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.42, 0.12), pantsMat);
-      calfL.position.set(-0.10, 0.22, 0.34);
-      const calfR = calfL.clone();
-      calfR.position.x = 0.10;
-
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.52, 0.22), shirtMat);
-      torso.position.set(0, hipY + 0.30, 0);
-      torso.castShadow = true;
-
-      const headGroup = new THREE.Group();
-      headGroup.position.set(0, hipY + 0.66, 0.02);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.115, 16, 16), skinMat);
-      headGroup.add(head);
-
-      // Braccia appoggiate sul banchetto da lavoro che armeggiano sulla Mini-Z
-      const armL = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.10, 0.44), shirtMat);
-      armL.position.set(-0.22, hipY + 0.34, 0.22);
-      armL.rotation.y = -0.22;
-      const armR = armL.clone();
-      armR.position.x = 0.22;
-      armR.rotation.y = 0.22;
-
-      group.add(thighL, thighR, calfL, calfR, torso, headGroup, armL, armR);
-      return { group, headGroup, armL, armR };
-    }
-
-    // Personaggio in piedi (1.75m reali)
-    const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.065, 0.84, 12), pantsMat);
-    legL.position.set(-0.10, 0.42, 0);
-    const legR = legL.clone();
-    legR.position.x = 0.10;
-
-    const shoeL = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.07, 0.26), shoeMat);
-    shoeL.position.set(-0.10, 0.035, 0.04);
-    const shoeR = shoeL.clone();
-    shoeR.position.x = 0.10;
-
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.58, 0.23), shirtMat);
-    torso.position.set(0, 1.12, 0);
-    torso.castShadow = true;
-
-    // Se è un Commissario di pista, aggiunge le bande catarifrangenti della pettorina!
-    if (isMarshal) {
-      const stripeMat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
-      const vestBand1 = new THREE.Mesh(new THREE.BoxGeometry(0.41, 0.06, 0.24), stripeMat);
-      vestBand1.position.set(0, 1.02, 0);
-      const vestBand2 = vestBand1.clone();
-      vestBand2.position.y = 1.22;
-      group.add(vestBand1, vestBand2);
-    }
-
-    const headGroup = new THREE.Group();
-    headGroup.position.set(0, 1.56, 0);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.115, 16, 16), skinMat);
-    headGroup.add(head);
-
-    if (capColor !== null) {
-      const capMat = new THREE.MeshStandardMaterial({ color: capColor, roughness: 0.5 });
-      const capDome = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), capMat);
-      capDome.position.y = 0.02;
-      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.015, 0.12), capMat);
-      visor.position.set(0, 0.03, 0.11);
-      headGroup.add(capDome, visor);
-    }
-
-    const armL = new THREE.Group();
-    armL.position.set(-0.24, 1.34, 0);
-    const armMeshL = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.52, 10), shirtMat);
-    armMeshL.position.set(0, -0.22, 0.12);
-    armMeshL.rotation.x = hasTransmitter ? -0.95 : -0.2;
-    armL.add(armMeshL);
-
-    const armR = new THREE.Group();
-    armR.position.set(0.24, 1.34, 0);
-    const armMeshR = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.52, 10), shirtMat);
-    armMeshR.position.set(0, -0.22, 0.12);
-    armMeshR.rotation.x = hasTransmitter ? -0.95 : -0.2;
-    armR.add(armMeshR);
-
-    // Radiocomando a volantino in scala reale (22cm di altezza) tenuto tra le mani!
-    let transmitterWheel = null;
-    if (hasTransmitter) {
-      const txGroup = new THREE.Group();
-      const txBodyMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.3, metalness: 0.5 });
-      const txScreenMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-      const txWheelMat = new THREE.MeshStandardMaterial({ color: 0xe11d48, metalness: 0.8, roughness: 0.2 });
-
-      // Impugnatura a pistola + corpo superiore con display LCD illuminato
-      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.05), txBodyMat);
-      const topUnit = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.07, 0.16), txBodyMat);
-      topUnit.position.set(0, 0.09, 0.03);
-      const lcdScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.055, 0.045), txScreenMat);
-      lcdScreen.rotation.x = -Math.PI / 3;
-      lcdScreen.position.set(0, 0.127, 0.01);
-
-      // Volantino laterale dello sterzo (diametro 5.5 cm)
-      transmitterWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.018, 16), txWheelMat);
-      transmitterWheel.rotation.z = Math.PI / 2;
-      transmitterWheel.position.set(-0.048, 0.085, 0.04);
-
-      txGroup.add(handle, topUnit, lcdScreen, transmitterWheel);
-      txGroup.position.set(0, 1.12, 0.34);
-      group.add(txGroup);
-    }
-
-    group.add(legL, legR, shoeL, shoeR, torso, headGroup, armL, armR);
-    return { group, headGroup, armL, armR, transmitterWheel };
-  }
-
-  // Costruisce la Console della Direzione Gara (Race Control) a bordo pista con monitor, semaforo e Telecronista al microfono
-  buildRaceControlConsole() {
-    const rcGroup = new THREE.Group();
-    rcGroup.position.set(-4.35, 0, 1.25);
-    rcGroup.rotation.y = Math.PI / 2.4;
-
-    const deskMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
-    const skirtMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.6 });
-    const darkMetal = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.3 });
-
-    // Tavolo Regia (1.35m x 0.65m, altezza 0.75m)
-    const deskTop = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.04, 0.65), deskMat);
-    deskTop.position.set(0, 0.75, 0);
-    const deskFront = new THREE.Mesh(new THREE.BoxGeometry(1.33, 0.73, 0.04), skirtMat);
-    deskFront.position.set(0, 0.365, 0.30);
-    rcGroup.add(deskTop, deskFront);
-
-    // Doppio Monitor Direzione Gara con schermata Live Timing
-    const monScreenMat = new THREE.MeshBasicMaterial({ color: 0x0284c7 });
-    for (const mx of [-0.32, 0.18]) {
-      const monitor = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.26, 0.025), darkMetal);
-      monitor.position.set(mx, 0.93, 0.08);
-      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.39, 0.23), monScreenMat);
-      screen.position.set(mx, 0.93, 0.066);
-      screen.rotation.y = Math.PI;
-      rcGroup.add(monitor, screen);
-    }
-
-    // Microfono da tavolo dello Speaker / Telecronista
-    const micBase = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.02, 12), darkMetal);
-    micBase.position.set(-0.05, 0.78, -0.05);
-    const micStem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 8), darkMetal);
-    micStem.position.set(-0.05, 0.88, -0.08);
-    micStem.rotation.x = 0.25;
-    const micFoam = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, 12, 12),
-      new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.8 })
-    );
-    micFoam.position.set(-0.05, 0.98, -0.05);
-    rcGroup.add(micBase, micStem, micFoam);
-
-    // Colonna Semaforo Direzione Gara (Verde / Giallo / Rosso) + Cassa Audio PA
-    const lightPole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.35, 12), darkMetal);
-    lightPole.position.set(0.55, 1.42, 0.15);
-    const greenLamp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 12), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
-    greenLamp.position.set(0.55, 1.95, 0.15);
-    const amberLamp = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 12), new THREE.MeshBasicMaterial({ color: 0xf59e0b }));
-    amberLamp.position.set(0.55, 1.82, 0.15);
-    rcGroup.add(lightPole, greenLamp, amberLamp);
-
-    // Il Direttore di Gara / Telecronista seduto alla console
-    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.45, 0.44), darkMetal);
-    chair.position.set(-0.05, 0.225, -0.38);
-    rcGroup.add(chair);
-
-    this.raceDirector = this.createHumanFigure({
-      shirtColor: 0x111827,
-      pantsColor: 0x334155,
-      capColor: 0xdc2626,
-      isSeated: true
-    });
-    this.raceDirector.group.position.set(-0.05, 0, -0.42);
-    rcGroup.add(this.raceDirector.group);
-
-    this.clubGroup.add(rcGroup);
-  }
-
-  // Costruisce i Banchetti da Lavoro (Area Box) con meccanici/piloti seduti, tappetini, caricabatterie e Mini-Z di ricambio!
-  buildPitWorkbenches() {
-    const benchPositions = [
-      { x: -5.35, z: -0.60, rotY: Math.PI / 2, shirt: 0x2563eb, carColor: 0xfacc15 },
-      { x: -5.35, z: -2.35, rotY: Math.PI / 2, shirt: 0x16a34a, carColor: 0xef4444 },
-      { x:  5.35, z: -0.60, rotY: -Math.PI / 2, shirt: 0x9333ea, carColor: 0x38bdf8 },
-      { x:  5.35, z: -2.35, rotY: -Math.PI / 2, shirt: 0xea580c, carColor: 0x22c55e }
-    ];
-
-    const tableTopMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.55 });
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6, roughness: 0.4 });
-    const pitMatBlue = new THREE.MeshStandardMaterial({ color: 0x0369a1, roughness: 0.7 });
-    const chargerMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.5, roughness: 0.3 });
-    const lcdMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee });
-    const tireMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.85 });
-
-    for (const bp of benchPositions) {
-      const bGroup = new THREE.Group();
-      bGroup.position.set(bp.x, 0, bp.z);
-      bGroup.rotation.y = bp.rotY;
-
-      // Piano del banchetto da lavoro (1.20m x 0.60m, alto 0.75m reali)
-      const top = new THREE.Mesh(
-        new THREE.BoxGeometry(REAL_SCALE.TABLE_WIDTH, 0.035, REAL_SCALE.TABLE_DEPTH),
-        tableTopMat
-      );
-      top.position.set(0, REAL_SCALE.TABLE_HEIGHT, 0);
-      top.receiveShadow = true;
-      top.castShadow = true;
-      bGroup.add(top);
-
-      // 4 Gambe del tavolo
-      for (const lx of [-0.55, 0.55]) {
-        for (const lz of [-0.25, 0.25]) {
-          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, REAL_SCALE.TABLE_HEIGHT, 8), legMat);
-          leg.position.set(lx, REAL_SCALE.TABLE_HEIGHT / 2, lz);
-          bGroup.add(leg);
-        }
-      }
-
-      // Tappetino da modellismo blu Kyosho (45cm x 30cm)
-      const workMat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.004, 0.30), pitMatBlue);
-      workMat.position.set(0, REAL_SCALE.TABLE_HEIGHT + 0.02, 0.06);
-      bGroup.add(workMat);
-
-      // Una Mini-Z in scala reale (17.2cm x 7.8cm!) appoggiata sopra il tappetino da lavoro!
-      const pitCar = new THREE.Mesh(
-        new THREE.BoxGeometry(0.078, 0.044, 0.172),
-        new THREE.MeshStandardMaterial({ color: bp.carColor, roughness: 0.2, metalness: 0.3 })
-      );
-      pitCar.rotation.y = 0.35;
-      pitCar.position.set(0.02, REAL_SCALE.TABLE_HEIGHT + 0.044, 0.06);
-      bGroup.add(pitCar);
-
-      // Caricabatterie digitale per batterie AAA Mini-Z (13cm x 10cm) con schermo acceso
-      const charger = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.055, 0.10), chargerMat);
-      charger.position.set(-0.36, REAL_SCALE.TABLE_HEIGHT + 0.045, -0.08);
-      const chargerLcd = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.03), lcdMat);
-      chargerLcd.rotation.x = -Math.PI / 3;
-      chargerLcd.position.set(-0.36, REAL_SCALE.TABLE_HEIGHT + 0.074, -0.06);
-      bGroup.add(charger, chargerLcd);
-
-      // Colonnine di gomme di ricambio Mini-Z (diametro reale 2.5 cm!) e cassetta attrezzi
-      const tireStack = new THREE.Mesh(new THREE.CylinderGeometry(0.0125, 0.0125, 0.06, 12), tireMat);
-      tireStack.position.set(0.34, REAL_SCALE.TABLE_HEIGHT + 0.048, 0.05);
-      const toolBox = new THREE.Mesh(
-        new THREE.BoxGeometry(0.22, 0.11, 0.14),
-        new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 })
-      );
-      toolBox.position.set(0.38, REAL_SCALE.TABLE_HEIGHT + 0.07, -0.12);
-      bGroup.add(tireStack, toolBox);
-
-      // Sgabello + Meccanico/Pilota seduto al banchetto
-      const stool = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.45, 16), legMat);
-      stool.position.set(0, 0.225, -0.42);
-      bGroup.add(stool);
-
-      const mech = this.createHumanFigure({
-        shirtColor: bp.shirt,
-        pantsColor: 0x1e293b,
-        capColor: bp.carColor,
-        isSeated: true
-      });
-      mech.group.position.set(0, 0, -0.42);
-      bGroup.add(mech.group);
-      this.pitMechanics.push(mech);
-
-      this.clubGroup.add(bGroup);
-    }
-  }
-
-  // Costruisce il tracciato RCP selezionato con cordoli, sponde morbide, ponte cronometraggio e Commissari
   buildTrack(trackId, reverse = false) {
     while (this.trackGroup.children.length > 0) {
       this.trackGroup.remove(this.trackGroup.children[0]);
     }
-    this.marshals = [];
 
     const spec = TRACK_LAYOUTS.find((t) => t.id === trackId) || TRACK_LAYOUTS[0];
     this.activeTrackSpec = spec;
@@ -532,57 +455,50 @@ export class ClubEnvironment {
     const rawPoints = spec.waypoints.map((p) => new THREE.Vector3(p.x, 0, p.z));
     if (reverse) rawPoints.reverse();
 
-    const curve = new THREE.CatmullRomCurve3(rawPoints, true, 'catmullrom', 0.42);
-    const numSamples = 260;
+    this.curve = new THREE.CatmullRomCurve3(rawPoints, true, 'catmullrom', 0.40);
+    this.totalTrackLength = this.curve.getLength();
+    const numSamples = 380;
     this.curveSamples = [];
 
     for (let i = 0; i < numSamples; i++) {
       const t = i / numSamples;
-      const pt = curve.getPointAt(t);
-      const tan = curve.getTangentAt(t).normalize();
-      const normal = new THREE.Vector3(-tan.z, 0, tan.x); // Normale laterale nel piano XZ
+      const pt = this.curve.getPointAt(t);
+      const tan = this.curve.getTangentAt(t).normalize();
+      const normal = new THREE.Vector3(-tan.z, 0, tan.x);
       this.curveSamples.push({ t, pt, tan, normal });
     }
 
-    // 1. Pedana di fondo del tappeto Kyosho RCP Track (7.0m x 4.6m) con griglia 50x50cm
-    const baseMat = new THREE.MeshStandardMaterial({
+    // 1. Tappeto base rettangolare Kyosho RCP Track adagiato sul grande tavolo centrale (BOARD)
+    const rcpBaseMat = new THREE.MeshStandardMaterial({
       map: this.rcpTexture,
-      color: spec.surfaceType === 'drift_carpet' ? 0x1e293b : 0x2b303c,
-      roughness: spec.surfaceType === 'drift_carpet' ? 0.35 : 0.82
+      normalMap: this.rcpNormalMap,
+      normalScale: new THREE.Vector2(0.35, 0.35),
+      color: spec.surfaceType === 'drift_carpet' ? 0x1e293b : 0x262b34,
+      roughness: spec.surfaceType === 'drift_carpet' ? 0.36 : 0.78,
+      metalness: 0.06
     });
-    const rcpBase = new THREE.Mesh(new THREE.BoxGeometry(7.0, 0.014, 4.6), baseMat);
-    rcpBase.position.set(0, -0.007, -0.05);
-    rcpBase.receiveShadow = true;
-    this.trackGroup.add(rcpBase);
+    const rcpPad = new THREE.Mesh(new THREE.BoxGeometry(10.1, 0.014, 5.75), rcpBaseMat);
+    rcpPad.position.set(2.45, 0.004, -1.925);
+    rcpPad.receiveShadow = true;
+    this.trackGroup.add(rcpPad);
 
-    // 2. Nastro corsia stradale con gommatura centrale (Racing Line)
+    // 2. Corsia stradale continua ad alta risoluzione con traiettoria gommata e linee bianche
     const laneHalf = spec.laneWidth / 2;
-    const roadMesh = this.createRibbonMesh(this.curveSamples, laneHalf, 0.002, spec.surfaceType);
+    const roadMesh = this.createSmoothRoadMesh(this.curveSamples, laneHalf, 0.014, spec.surfaceType);
     this.trackGroup.add(roadMesh);
 
-    // 3. Sponde morbide RCP interne ed esterne (altezza reale 4.5 cm = 0.045m!) + Cordoli sugli angoli
-    this.buildBarriersAndCurbs(this.curveSamples, laneHalf);
+    // 3. Sponde morbide continue Kyosho RCP + Cordoli 3D sugli apici
+    this.buildContinuousWallsAndCurbs(this.curveSamples, laneHalf);
 
-    // 4. Griglia di partenza + Ponte di Cronometraggio Luminoso sul rettilineo sotto il palco
-    const bridgeIdx = Math.floor((spec.bridgeProgress || 0.08) * numSamples) % numSamples;
+    // 4. Ponte di Cronometraggio Luminoso Kyosho IC-Tag sul rettilineo principale davanti al palco
+    const bridgeIdx = Math.floor((spec.bridgeProgress || 0.10) * numSamples) % numSamples;
     const bridgeSample = this.curveSamples[bridgeIdx];
     this.buildTimingBridge(bridgeSample, spec.laneWidth);
 
-    // 5. Commissari di Pista (Marshals) attorno al tappeto RCP
-    for (const mp of spec.marshalPositions || []) {
-      const marshal = this.createHumanFigure({
-        isMarshal: true,
-        pantsColor: 0x0f172a,
-        capColor: 0xf97316
-      });
-      marshal.group.position.set(mp.x, 0, mp.z);
-      marshal.group.lookAt(mp.lookAt.x, 0, mp.lookAt.z);
-      this.trackGroup.add(marshal.group);
-      this.marshals.push(marshal);
-    }
+    // 5. Crea / reimposta le 3 Auto Avversarie AI Mini-Z sul tracciato
+    this.spawnAiCars();
 
-    // Posizione iniziale sul rettilineo principale appena prima del ponte
-    const startIdx = (bridgeIdx - 12 + numSamples) % numSamples;
+    const startIdx = (bridgeIdx - 14 + numSamples) % numSamples;
     const startSample = this.curveSamples[startIdx];
     const startHeading = Math.atan2(startSample.tan.x, startSample.tan.z);
 
@@ -602,7 +518,32 @@ export class ClubEnvironment {
     };
   }
 
-  createRibbonMesh(samples, halfWidth, yOffset, surfaceType) {
+  spawnAiCars() {
+    while (this.aiCarsGroup.children.length > 0) {
+      this.aiCarsGroup.remove(this.aiCarsGroup.children[0]);
+    }
+    this.aiCars = [];
+
+    for (let i = 1; i <= 3; i++) {
+      const drv = DRIVERS[i];
+      const carObj = makeCar(drv);
+      carObj.root.scale.setScalar(1.16);
+      this.aiCarsGroup.add(carObj.root);
+
+      this.aiCars.push({
+        driver: drv,
+        carObj,
+        t: (0.04 - i * 0.025 + 1) % 1,
+        laneOffset: (i - 2) * 0.18,
+        speed: 3.6 * (drv.pace || 1.0),
+        laps: 1,
+        lapTime: 0,
+        bestLap: 6.45 + i * 0.12
+      });
+    }
+  }
+
+  createSmoothRoadMesh(samples, halfWidth, yOffset, surfaceType) {
     const positions = [];
     const uvs = [];
     const indices = [];
@@ -616,7 +557,7 @@ export class ClubEnvironment {
       positions.push(left.x, yOffset, left.z);
       positions.push(right.x, yOffset, right.z);
 
-      const v = (i / n) * 28;
+      const v = (i / n) * 38;
       uvs.push(0, v, 1, v);
 
       if (i < n) {
@@ -632,44 +573,44 @@ export class ClubEnvironment {
     geo.setIndex(indices);
     geo.computeVertexNormals();
 
-    // Texture della corsia con la traccia scura gommata al centro e le righe bianche laterali
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
+    canvas.width = 512;
+    canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = surfaceType === 'drift_carpet' ? '#172033' : '#2d3340';
-    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = surfaceType === 'drift_carpet' ? '#1c2432' : '#2c313d';
+    ctx.fillRect(0, 0, 512, 512);
 
-    // Gommatura centrale più scura (Racing groove)
-    const grad = ctx.createLinearGradient(0, 0, 256, 0);
-    grad.addColorStop(0, 'rgba(255,255,255,0.06)');
-    grad.addColorStop(0.2, 'rgba(0,0,0,0.0)');
-    grad.addColorStop(0.5, 'rgba(0,0,0,0.26)');
-    grad.addColorStop(0.8, 'rgba(0,0,0,0.0)');
-    grad.addColorStop(1, 'rgba(255,255,255,0.06)');
+    const grad = ctx.createLinearGradient(0, 0, 512, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0.04)');
+    grad.addColorStop(0.22, 'rgba(0,0,0,0.0)');
+    grad.addColorStop(0.5, 'rgba(0,0,0,0.34)');
+    grad.addColorStop(0.78, 'rgba(0,0,0,0.0)');
+    grad.addColorStop(1, 'rgba(255,255,255,0.04)');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillRect(0, 0, 512, 512);
 
-    // Linee bianche/azzurre di margine corsia
-    ctx.fillStyle = surfaceType === 'drift_carpet' ? '#38bdf8' : '#e2e8f0';
-    ctx.fillRect(6, 0, 6, 256);
-    ctx.fillRect(244, 0, 6, 256);
+    ctx.fillStyle = surfaceType === 'drift_carpet' ? '#38bdf8' : '#f1f5f9';
+    ctx.fillRect(10, 0, 10, 512);
+    ctx.fillRect(492, 0, 10, 512);
 
-    // Giuntura ogni 50cm delle mattonelle RCP
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.38)';
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(0, 128);
-    ctx.lineTo(256, 128);
+    ctx.moveTo(0, 256);
+    ctx.lineTo(512, 256);
     ctx.stroke();
 
     const roadTex = new THREE.CanvasTexture(canvas);
     roadTex.wrapS = THREE.RepeatWrapping;
     roadTex.wrapT = THREE.RepeatWrapping;
+    roadTex.anisotropy = 8;
 
     const mat = new THREE.MeshStandardMaterial({
       map: roadTex,
-      roughness: surfaceType === 'drift_carpet' ? 0.35 : 0.78
+      normalMap: this.rcpNormalMap,
+      normalScale: new THREE.Vector2(0.4, 0.4),
+      roughness: surfaceType === 'drift_carpet' ? 0.34 : 0.74,
+      metalness: 0.06
     });
 
     const mesh = new THREE.Mesh(geo, mat);
@@ -677,103 +618,187 @@ export class ClubEnvironment {
     return mesh;
   }
 
-  buildBarriersAndCurbs(samples, halfWidth) {
-    const barrierHeight = REAL_SCALE.BARRIER_HEIGHT; // 4.5 cm reali!
-    const barrierThickness = 0.042; // 4.2 cm spessore sponda RCP
-    const redMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
-    const darkFoamMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.85 });
+  buildContinuousWallsAndCurbs(samples, halfWidth) {
+    const wallWidth = 0.040;
+    const wallHeight = 0.048;
+    const curbWidth = 0.054;
 
-    const n = samples.length;
-    const step = 2;
+    for (const side of [-1, 1]) {
+      const innerR = halfWidth;
+      const outerR = halfWidth + wallWidth;
+      const wallMesh = this.createExtrudedWallBand(samples, side * innerR, side * outerR, wallHeight, true);
+      this.trackGroup.add(wallMesh);
 
-    for (let i = 0; i < n; i += step) {
-      const s0 = samples[i];
-      const s1 = samples[(i + step) % n];
-      const segLen = s0.pt.distanceTo(s1.pt) * 1.04;
-      const mid = s0.pt.clone().add(s1.pt).multiplyScalar(0.5);
-      const angle = Math.atan2(s1.pt.x - s0.pt.x, s1.pt.z - s0.pt.z);
-
-      // Calcola curvatura locale per disegnare i cordoli bianchi/rossi sulle curve!
-      const curvature = s0.tan.angleTo(s1.tan);
-      const isCorner = curvature > 0.032;
-
-      const matChoice = (i / step) % 2 === 0 ? redMat : whiteMat;
-      const wallMat = isCorner ? matChoice : (i / step) % 4 === 0 ? whiteMat : darkFoamMat;
-
-      // Sponda sinistra e destra
-      for (const side of [-1, 1]) {
-        const offset = halfWidth + barrierThickness * 0.5;
-        const bx = mid.x + s0.normal.x * side * offset;
-        const bz = mid.z + s0.normal.z * side * offset;
-
-        const block = new THREE.Mesh(
-          new THREE.BoxGeometry(barrierThickness, barrierHeight, segLen),
-          wallMat
-        );
-        block.position.set(bx, barrierHeight / 2, bz);
-        block.rotation.y = angle;
-        block.castShadow = true;
-        block.receiveShadow = true;
-        this.trackGroup.add(block);
-
-        // Cordolo ribassato interno (alto 1.1 cm, largo 4.5 cm) nelle curve!
-        if (isCorner) {
-          const curbOffset = halfWidth - 0.022;
-          const cx = mid.x + s0.normal.x * side * curbOffset;
-          const cz = mid.z + s0.normal.z * side * curbOffset;
-          const curb = new THREE.Mesh(
-            new THREE.BoxGeometry(0.045, 0.011, segLen),
-            matChoice
-          );
-          curb.position.set(cx, 0.0055, cz);
-          curb.rotation.y = angle;
-          this.trackGroup.add(curb);
-        }
-      }
+      const curbInner = halfWidth - curbWidth;
+      const curbOuter = halfWidth;
+      const curbMesh = this.createFlatCurbRibbon(samples, side * curbInner, side * curbOuter, 0.018);
+      this.trackGroup.add(curbMesh);
     }
   }
 
-  // Costruisce il Ponte di Cronometraggio (Kyosho IC-Tag Bridge) con tabellone LED aggiornabile in tempo reale!
+  createExtrudedWallBand(samples, offsetA, offsetB, height, useCurvatureColors) {
+    const minOff = Math.min(offsetA, offsetB);
+    const maxOff = Math.max(offsetA, offsetB);
+    const n = samples.length;
+
+    const positions = [];
+    const colors = [];
+    const indices = [];
+
+    const cRed = new THREE.Color(0xdc2626);
+    const cWhite = new THREE.Color(0xf8fafc);
+    const cDark = new THREE.Color(0x1e293b);
+
+    for (let i = 0; i < n; i++) {
+      const s0 = samples[i];
+      const s1 = samples[(i + 1) % n];
+      const sNext = samples[(i + 3) % n];
+
+      const curvature = s0.tan.angleTo(sNext.tan);
+      const isCorner = curvature > 0.055;
+      const bandIdx = Math.floor(i / 3);
+      let col = cDark;
+      if (useCurvatureColors && isCorner) {
+        col = bandIdx % 2 === 0 ? cRed : cWhite;
+      } else if (bandIdx % 6 === 0) {
+        col = cWhite;
+      }
+
+      const p0In = s0.pt.clone().addScaledVector(s0.normal, minOff);
+      const p0Out = s0.pt.clone().addScaledVector(s0.normal, maxOff);
+      const p1In = s1.pt.clone().addScaledVector(s1.normal, minOff);
+      const p1Out = s1.pt.clone().addScaledVector(s1.normal, maxOff);
+
+      const baseVert = positions.length / 3;
+      const y0 = 0.012;
+      const pts = [
+        [p0In.x, y0, p0In.z],
+        [p0Out.x, y0, p0Out.z],
+        [p0Out.x, height, p0Out.z],
+        [p0In.x, height, p0In.z],
+        [p1In.x, y0, p1In.z],
+        [p1Out.x, y0, p1Out.z],
+        [p1Out.x, height, p1Out.z],
+        [p1In.x, height, p1In.z]
+      ];
+
+      for (const p of pts) {
+        positions.push(p[0], p[1], p[2]);
+        colors.push(col.r, col.g, col.b);
+      }
+
+      indices.push(baseVert + 3, baseVert + 2, baseVert + 6, baseVert + 3, baseVert + 6, baseVert + 7);
+      indices.push(baseVert + 0, baseVert + 3, baseVert + 7, baseVert + 0, baseVert + 7, baseVert + 4);
+      indices.push(baseVert + 1, baseVert + 5, baseVert + 6, baseVert + 1, baseVert + 6, baseVert + 2);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.55,
+      metalness: 0.1
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  createFlatCurbRibbon(samples, offsetA, offsetB, yHeight) {
+    const minOff = Math.min(offsetA, offsetB);
+    const maxOff = Math.max(offsetA, offsetB);
+    const n = samples.length;
+
+    const positions = [];
+    const colors = [];
+    const indices = [];
+
+    const cRed = new THREE.Color(0xe11d48);
+    const cWhite = new THREE.Color(0xf8fafc);
+    const cAsphalt = new THREE.Color(0x282e3b);
+
+    for (let i = 0; i < n; i++) {
+      const s0 = samples[i];
+      const s1 = samples[(i + 1) % n];
+      const sNext = samples[(i + 4) % n];
+
+      const isCorner = s0.tan.angleTo(sNext.tan) > 0.055;
+      const stripe = Math.floor(i / 2) % 2 === 0;
+      const col = isCorner ? (stripe ? cRed : cWhite) : cAsphalt;
+      const y = isCorner ? yHeight : 0.0145;
+
+      const p0In = s0.pt.clone().addScaledVector(s0.normal, minOff);
+      const p0Out = s0.pt.clone().addScaledVector(s0.normal, maxOff);
+      const p1In = s1.pt.clone().addScaledVector(s1.normal, minOff);
+      const p1Out = s1.pt.clone().addScaledVector(s1.normal, maxOff);
+
+      const base = positions.length / 3;
+      positions.push(
+        p0In.x, y, p0In.z,
+        p0Out.x, y, p0Out.z,
+        p1Out.x, y, p1Out.z,
+        p1In.x, y, p1In.z
+      );
+      for (let k = 0; k < 4; k++) colors.push(col.r, col.g, col.b);
+
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    return new THREE.Mesh(
+      geo,
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.65 })
+    );
+  }
+
   buildTimingBridge(sample, laneWidth) {
     const bridgeGroup = new THREE.Group();
-    bridgeGroup.position.set(sample.pt.x, 0, sample.pt.z);
+    bridgeGroup.position.set(sample.pt.x, 0.014, sample.pt.z);
     bridgeGroup.rotation.y = Math.atan2(sample.tan.x, sample.tan.z);
 
-    // Striscia a scacchi bianchi e neri sul tappeto RCP sotto il ponte
     const checkerCanvas = document.createElement('canvas');
     checkerCanvas.width = 256;
     checkerCanvas.height = 64;
     const cctx = checkerCanvas.getContext('2d');
     for (let x = 0; x < 16; x++) {
       for (let y = 0; y < 4; y++) {
-        cctx.fillStyle = (x + y) % 2 === 0 ? '#ffffff' : '#111827';
+        cctx.fillStyle = (x + y) % 2 === 0 ? '#ffffff' : '#0f172a';
         cctx.fillRect(x * 16, y * 16, 16, 16);
       }
     }
     const finishLine = new THREE.Mesh(
-      new THREE.PlaneGeometry(laneWidth, 0.18),
+      new THREE.PlaneGeometry(laneWidth, 0.16),
       new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(checkerCanvas) })
     );
     finishLine.rotation.x = -Math.PI / 2;
-    finishLine.position.y = 0.0035;
+    finishLine.position.y = 0.002;
     bridgeGroup.add(finishLine);
 
-    // Pilastri e traversa del ponte (altezza reale 36 cm, larghezza corsia + 14 cm)
     const span = laneWidth + 0.14;
-    const height = 0.36;
-    const pillarMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.35, metalness: 0.3 });
-    const topBoxMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.6 });
+    const height = 0.32;
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0xc8141b, roughness: 0.35, metalness: 0.3 });
+    const topBoxMat = new THREE.MeshStandardMaterial({ color: 0x151821, roughness: 0.3, metalness: 0.6 });
 
-    const leftPillar = new THREE.Mesh(new THREE.BoxGeometry(0.055, height, 0.08), pillarMat);
+    const leftPillar = new THREE.Mesh(new THREE.BoxGeometry(0.045, height, 0.07), pillarMat);
     leftPillar.position.set(-span / 2, height / 2, 0);
+    leftPillar.castShadow = true;
     const rightPillar = leftPillar.clone();
     rightPillar.position.x = span / 2;
 
-    const crossbar = new THREE.Mesh(new THREE.BoxGeometry(span + 0.08, 0.11, 0.09), topBoxMat);
-    crossbar.position.set(0, height + 0.03, 0);
+    const crossbar = new THREE.Mesh(new THREE.BoxGeometry(span + 0.06, 0.095, 0.08), topBoxMat);
+    crossbar.position.set(0, height + 0.025, 0);
+    crossbar.castShadow = true;
 
-    // Display LED luminoso sul ponte rivolto verso il Palco di Guida!
     this.bridgeScreenCanvas = document.createElement('canvas');
     this.bridgeScreenCanvas.width = 512;
     this.bridgeScreenCanvas.height = 96;
@@ -781,49 +806,87 @@ export class ClubEnvironment {
     this.bridgeScreenTex = new THREE.CanvasTexture(this.bridgeScreenCanvas);
     this.updateBridgeDisplay(0, null, null);
 
-    const screenMeshFront = new THREE.Mesh(
-      new THREE.PlaneGeometry(span * 0.88, 0.095),
+    const sideScreen = new THREE.Mesh(
+      new THREE.PlaneGeometry(span * 0.86, 0.082),
       new THREE.MeshBasicMaterial({ map: this.bridgeScreenTex })
     );
-    screenMeshFront.position.set(0, height + 0.03, 0.047);
+    sideScreen.position.set(-0.042, height + 0.025, 0);
+    sideScreen.rotation.y = -Math.PI / 2;
 
-    const screenMeshBack = screenMeshFront.clone();
-    screenMeshBack.position.z = -0.047;
-    screenMeshBack.rotation.y = Math.PI;
+    const frontScreen = new THREE.Mesh(
+      new THREE.PlaneGeometry(span * 0.86, 0.082),
+      new THREE.MeshBasicMaterial({ map: this.bridgeScreenTex })
+    );
+    frontScreen.position.set(0, height + 0.025, 0.042);
 
-    bridgeGroup.add(leftPillar, rightPillar, crossbar, screenMeshFront, screenMeshBack);
+    bridgeGroup.add(leftPillar, rightPillar, crossbar, sideScreen, frontScreen);
     this.trackGroup.add(bridgeGroup);
   }
 
   updateBridgeDisplay(lapCount, lastLapSec, bestLapSec) {
-    if (!this.bridgeScreenCtx || !this.bridgeScreenTex) return;
-    const ctx = this.bridgeScreenCtx;
-    ctx.fillStyle = '#050811';
-    ctx.fillRect(0, 0, 512, 96);
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, 508, 92);
-
     const fmt = (t) => (t ? `${t.toFixed(2)}s` : '--.--s');
+    if (this.bridgeScreenCtx && this.bridgeScreenTex) {
+      const ctx = this.bridgeScreenCtx;
+      ctx.fillStyle = '#050811';
+      ctx.fillRect(0, 0, 512, 96);
+      ctx.strokeStyle = '#e11d48';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(2, 2, 508, 92);
 
-    ctx.fillStyle = '#facc15';
-    ctx.font = 'bold 28px Consolas, monospace';
-    ctx.fillText(`GIRO: ${lapCount}`, 22, 42);
+      ctx.fillStyle = '#facc15';
+      ctx.font = 'bold 28px Consolas, monospace';
+      ctx.fillText(`GIRO: ${lapCount}`, 22, 42);
 
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillText(`ULTIMO: ${fmt(lastLapSec)}`, 165, 42);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(`ULTIMO: ${fmt(lastLapSec)}`, 170, 42);
 
-    ctx.fillStyle = '#22c55e';
-    ctx.fillText(`RECORD: ${fmt(bestLapSec)}`, 22, 80);
+      ctx.fillStyle = '#22c55e';
+      ctx.fillText(`RECORD: ${fmt(bestLapSec)}`, 22, 80);
 
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 22px "Segoe UI", sans-serif';
-    ctx.fillText('KYOSHO IC-TAG', 325, 80);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 22px "Titillium Web", sans-serif';
+      ctx.fillText('KYOSHO IC-TAG', 325, 80);
+      this.bridgeScreenTex.needsUpdate = true;
+    }
 
-    this.bridgeScreenTex.needsUpdate = true;
+    // Aggiorna anche il Maxischermo di fondo sala (1280x720) come in Slot-Car
+    if (this.monitor?.canvas && this.monitor?.tex) {
+      const g = this.monitor.canvas.getContext('2d');
+      const w = 1280, h = 720;
+      g.fillStyle = '#0d121c';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = '#c8141b';
+      g.fillRect(0, 0, w, 92);
+      g.fillStyle = '#ffffff';
+      g.font = `italic 900 48px ${B.FONT}`;
+      g.fillText('MINI-Z RC CLUB · TELEMETRIA IC-TAG LIVE', 36, 62);
+
+      const rows = [
+        { pos: 1, name: '1. Tu (Ferrari 499P)', laps: lapCount, last: fmt(lastLapSec), best: fmt(bestLapSec), col: '#e4242b' },
+        { pos: 2, name: '2. Marco R. (PN Racing)', laps: Math.max(1, lapCount), last: '6.62s', best: '6.48s', col: '#f4f4f6' },
+        { pos: 3, name: '3. Sara B. (M-Power)', laps: Math.max(1, lapCount - 1), last: '6.79s', best: '6.61s', col: '#19a954' },
+        { pos: 4, name: '4. Luca P. (GL Racing)', laps: Math.max(1, lapCount - 1), last: '6.71s', best: '6.55s', col: '#1f7ae8' }
+      ];
+      rows.forEach((r, idx) => {
+        const y = 140 + idx * 130;
+        g.fillStyle = idx % 2 === 0 ? '#161f30' : '#121926';
+        g.fillRect(32, y, w - 64, 110);
+        g.fillStyle = r.col;
+        g.fillRect(32, y, 18, 110);
+        g.fillStyle = '#ffffff';
+        g.font = `800 40px ${B.FONT}`;
+        g.fillText(r.name, 74, y + 68);
+        g.fillStyle = '#facc15';
+        g.fillText(`GIRI: ${r.laps}`, 620, y + 68);
+        g.fillStyle = '#38bdf8';
+        g.fillText(`ULT: ${r.last}`, 820, y + 68);
+        g.fillStyle = '#22c55e';
+        g.fillText(`BEST: ${r.best}`, 1040, y + 68);
+      });
+      this.monitor.tex.needsUpdate = true;
+    }
   }
 
-  // Controlla collisioni con le sponde morbide RCP e se le ruote sono sui cordoli
   checkCollision(x, z, carRadius, halfWidth) {
     let minDistSq = Infinity;
     let closest = this.curveSamples[0];
@@ -843,7 +906,7 @@ export class ClubEnvironment {
     const dz = z - closest.pt.z;
     const lateralOffset = dx * closest.normal.x + dz * closest.normal.z;
     const maxOffset = halfWidth - carRadius;
-    const onCurb = Math.abs(lateralOffset) > maxOffset - 0.048;
+    const onCurb = Math.abs(lateralOffset) > maxOffset - 0.05;
 
     if (Math.abs(lateralOffset) > maxOffset) {
       const sign = Math.sign(lateralOffset) || 1;
@@ -864,18 +927,16 @@ export class ClubEnvironment {
     return { hitWall: false, onCurb };
   }
 
-  // Rileva il passaggio sotto il ponte di cronometraggio Kyosho IC-Tag
   checkLapCrossing(x, z, bridgeSample) {
     const dx = x - bridgeSample.pt.x;
     const dz = z - bridgeSample.pt.z;
     const distSq = dx * dx + dz * dz;
 
-    // Se l'auto è lontana dal ponte (nella parte opposta della pista), arma il conteggio giro
     if (distSq > 2.2) {
       this.lapArmed = true;
     }
 
-    if (distSq < 0.38) {
+    if (distSq < 0.45) {
       const forwardDot = dx * bridgeSample.tan.x + dz * bridgeSample.tan.z;
       const currentSide = forwardDot >= 0 ? 1 : -1;
       if (this.lastBridgeSide === -1 && currentSide === 1) {
@@ -891,7 +952,6 @@ export class ClubEnvironment {
     return null;
   }
 
-  // Trova il punto della pista più vicino per quando il Commissario rimette dritta la Mini-Z
   getNearestTrackPose(x, z) {
     let minDistSq = Infinity;
     let best = this.curveSamples[0];
@@ -909,56 +969,56 @@ export class ClubEnvironment {
     };
   }
 
-  // Anima la testa dei piloti sul palco (e il volantino del loro radiocomando!), dei commissari, dei meccanici ai box e del telecronista
-  animateCharacters(timeSec, carPos, isSpeaking) {
-    // 1. Piloti sul palco: guardano la Mini-Z in pista e muovono il volantino del radiocomando!
-    for (let i = 0; i < this.standPilots.length; i++) {
-      const p = this.standPilots[i];
-      const dx = carPos.x - p.group.position.x;
-      const dz = carPos.z - 2.32;
-      const targetYaw = clamp(Math.atan2(-dx, -dz) * 0.55, -0.65, 0.65);
-      p.headGroup.rotation.y = targetYaw;
-      p.headGroup.rotation.x = 0.28; // Inclinata leggermente in basso verso la pista
-
-      if (p.transmitterWheel) {
-        p.transmitterWheel.rotation.x = Math.sin(timeSec * 6.5 + i * 2.1) * 0.45;
-      }
+  animateCharacters(timeSec, _carPos, _isSpeaking, dt = 1 / 60, cameraPos = null, playerThrottle = 0) {
+    if (this.podiumPilots[1] && cameraPos) {
+      const d = cameraPos.distanceTo(this.driverEyePos);
+      this.podiumPilots[1].visible = d > 0.55;
+      this.podiumPilots[1].userData.setThrottle?.(playerThrottle);
     }
 
-    // 2. Commissari di pista: seguono la Mini-Z con lo sguardo
-    for (const m of this.marshals) {
-      const dx = carPos.x - m.group.position.x;
-      const dz = carPos.z - m.group.position.z;
-      const worldAngle = Math.atan2(dx, dz);
-      let relYaw = worldAngle - m.group.rotation.y;
-      while (relYaw > Math.PI) relYaw -= Math.PI * 2;
-      while (relYaw < -Math.PI) relYaw += Math.PI * 2;
-      m.headGroup.rotation.y = clamp(relYaw * 0.6, -0.75, 0.75);
-      m.headGroup.rotation.x = 0.22;
+    for (let i = 0; i < this.podiumPilots.length; i++) {
+      if (i === 1) continue;
+      this.podiumPilots[i]?.userData.setThrottle?.(0.45 + 0.45 * Math.sin(timeSec * 3.2 + i * 1.7));
     }
 
-    // 3. Meccanici seduti ai banchetti da lavoro: lavorano con le braccia sulle Mini-Z ai box
-    for (let i = 0; i < this.pitMechanics.length; i++) {
-      const mech = this.pitMechanics[i];
-      mech.headGroup.rotation.x = 0.32 + Math.sin(timeSec * 2.0 + i) * 0.05;
-      mech.headGroup.rotation.y = Math.sin(timeSec * 1.3 + i * 1.7) * 0.18;
-      mech.armL.rotation.x = Math.sin(timeSec * 4.2 + i) * 0.08;
-      mech.armR.rotation.x = -Math.sin(timeSec * 4.2 + i) * 0.08;
+    for (let i = 0; i < this.backgroundPeople.length; i++) {
+      const person = this.backgroundPeople[i];
+      if (!person || !person.visible) continue;
+      const dist = cameraPos ? cameraPos.distanceTo(person.position) : 3.2;
+      person.userData.animate?.(dt, 0, dist);
     }
 
-    // 4. Direttore di Gara / Telecronista: si muove al microfono mentre parla in telecronaca!
-    if (this.raceDirector) {
-      if (isSpeaking) {
-        this.raceDirector.headGroup.rotation.x = Math.sin(timeSec * 12) * 0.08;
-        this.raceDirector.headGroup.rotation.y = Math.sin(timeSec * 5) * 0.15;
-      } else {
-        this.raceDirector.headGroup.rotation.x = 0.1;
-        this.raceDirector.headGroup.rotation.y = 0;
+    if (this.curve && this.aiCars.length > 0) {
+      for (let i = 0; i < this.aiCars.length; i++) {
+        const ai = this.aiCars[i];
+        const tNext = (ai.t + 0.025) % 1;
+        const tanNow = this.curve.getTangentAt(ai.t);
+        const tanAhead = this.curve.getTangentAt(tNext);
+        const curvature = tanNow.angleTo(tanAhead);
+        const targetSpeed = clamp((4.4 - curvature * 6.5) * (ai.driver.pace || 1.0), 1.85, 4.5);
+        ai.speed += (targetSpeed - ai.speed) * Math.min(1, dt * 6);
+
+        const prevT = ai.t;
+        ai.t = (ai.t + (ai.speed * dt) / Math.max(8, this.totalTrackLength)) % 1;
+        ai.lapTime += dt;
+        if (ai.t < prevT) {
+          ai.laps++;
+          if (ai.lapTime > 4.0) ai.bestLap = Math.min(ai.bestLap, ai.lapTime);
+          ai.lapTime = 0;
+        }
+
+        const pt = this.curve.getPointAt(ai.t);
+        const tan = this.curve.getTangentAt(ai.t).normalize();
+        const normal = new THREE.Vector3(-tan.z, 0, tan.x);
+        const worldPos = pt.clone().addScaledVector(normal, ai.laneOffset);
+
+        ai.carObj.root.position.set(worldPos.x, 0.014, worldPos.z);
+        ai.carObj.root.rotation.y = Math.atan2(-tan.z, tan.x);
+
+        for (const w of ai.carObj.wheels) {
+          w.g.rotation.z -= (ai.speed * dt) / w.r;
+        }
       }
     }
   }
-}
-
-function clamp(v, min, max) {
-  return Math.max(min, Math.min(max, v));
 }

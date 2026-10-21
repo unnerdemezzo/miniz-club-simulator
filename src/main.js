@@ -17,6 +17,10 @@ import { SoundAndCommentary } from './audio/SoundAndCommentary.js';
 import { ReplaySystem, REPLAY_CAMERAS } from './replay/ReplaySystem.js';
 import { ClubEnvironment } from './world/ClubEnvironment.js';
 import { MiniZCar } from './car/MiniZCar.js';
+import { ROST } from './club/config.js';
+import { keepDriverCarVisible } from './club/driver-framing.js';
+import { createQualityComposer } from './club/graphics-quality.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 class MiniZSimulatorApp {
   constructor() {
@@ -73,10 +77,10 @@ class MiniZSimulatorApp {
   initThreeScene() {
     this.canvas = document.getElementById('sim-canvas');
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0b0f19);
-    this.scene.fog = new THREE.FogExp2(0x0b0f19, 0.035);
+    this.scene.background = new THREE.Color(0x14171f);
+    this.scene.fog = new THREE.Fog(0x14171f, 18, 34);
 
-    this.camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.02, 45);
+    this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.03, 50);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -85,38 +89,57 @@ class MiniZSimulatorApp {
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Illuminazione al neon del capannone indoor
-    const ambient = new THREE.AmbientLight(0xe2e8f0, 1.35);
-    this.scene.add(ambient);
+    // Controlli Orbit per la visuale libera in Sala ("Ruota in Sala")
+    this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
+    this.orbit.target.set(2.45, -0.05, -1.8);
+    this.orbit.enableDamping = true;
+    this.orbit.dampingFactor = 0.07;
+    this.orbit.maxDistance = 12;
+    this.orbit.minDistance = 0.25;
+    this.orbit.maxPolarAngle = Math.PI * 0.49;
+    this.orbit.enabled = false;
 
-    const hemi = new THREE.HemisphereLight(0xf8fafc, 0x1e293b, 1.1);
-    hemi.position.set(0, 4.0, 0);
+    // Illuminazione realistica della sala del club (identica a Slot-Car)
+    const hemi = new THREE.HemisphereLight(0xfff6e8, 0x3a3228, 0.72);
+    hemi.position.set(2.5, 3.3, -1.8);
     this.scene.add(hemi);
 
-    this.mainCeilingLight = new THREE.DirectionalLight(0xffffff, 2.2);
-    this.mainCeilingLight.position.set(1.8, 3.85, 2.2);
+    this.mainCeilingLight = new THREE.DirectionalLight(0xfff5e4, 2.35);
+    this.mainCeilingLight.position.set(3.4, 3.2, 0.8);
+    this.mainCeilingLight.target.position.set(2.4, 0, -1.9);
     this.mainCeilingLight.castShadow = true;
-    this.mainCeilingLight.shadow.camera.left = -4.8;
-    this.mainCeilingLight.shadow.camera.right = 4.8;
-    this.mainCeilingLight.shadow.camera.top = 3.5;
-    this.mainCeilingLight.shadow.camera.bottom = -3.5;
+    this.mainCeilingLight.shadow.mapSize.set(2048, 2048);
+    this.mainCeilingLight.shadow.camera.left = -8.6;
+    this.mainCeilingLight.shadow.camera.right = 8.6;
+    this.mainCeilingLight.shadow.camera.top = 7.0;
+    this.mainCeilingLight.shadow.camera.bottom = -7.0;
     this.mainCeilingLight.shadow.camera.near = 0.5;
-    this.mainCeilingLight.shadow.camera.far = 10;
-    this.mainCeilingLight.shadow.bias = -0.0005;
+    this.mainCeilingLight.shadow.camera.far = 7.5;
+    this.mainCeilingLight.shadow.bias = -0.0003;
+    this.mainCeilingLight.shadow.normalBias = 0.012;
     this.scene.add(this.mainCeilingLight);
+    this.scene.add(this.mainCeilingLight.target);
 
-    // Luce dedicata sopra i banchetti da lavoro e il rettilineo sotto il palco
-    const standSpot = new THREE.PointLight(0xfffbeb, 3.5, 8);
-    standSpot.position.set(0, 3.4, 1.5);
-    this.scene.add(standSpot);
+    const fill1 = new THREE.PointLight(0xffe9c8, 3.5, 13, 1.4);
+    fill1.position.set(-1.5, 2.8, -2.0);
+    this.scene.add(fill1);
+
+    const fill2 = new THREE.PointLight(0xe6f0ff, 3.5, 13, 1.4);
+    fill2.position.set(6.2, 2.8, -2.0);
+    this.scene.add(fill2);
+
+    // Post-processing di qualità (GTAO Ambient Occlusion + Bloom + OutputPass come in Slot-Car)
+    this.qualityComposer = createQualityComposer(this.renderer, this.scene, this.camera, this.mainCeilingLight);
 
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-      this.applyGraphicsQuality(this.profileManager.state.graphicsQuality, false);
+      this.qualityComposer.resize();
     });
   }
 
@@ -131,8 +154,8 @@ class MiniZSimulatorApp {
       if (msg && statusText) statusText.textContent = msg;
     };
 
-    setProgress(15, 'Allestimento capannone indoor, palco di guida, banchetti box e direzione gara...');
-    this.club = new ClubEnvironment(this.scene);
+    setProgress(15, 'Allestimento sala del Club Mini-Z, pedana piloti, officina 3 banchi e direzione gara...');
+    this.club = new ClubEnvironment(this.scene, this.renderer);
 
     setProgress(35, 'Montaggio tappeto in gomma Kyosho RCP Track (mattonelle 50×50cm)...');
     this.loadActiveTrack(false);
@@ -177,28 +200,8 @@ class MiniZSimulatorApp {
     this.profileManager.state.graphicsQuality = q;
     if (saveState) this.profileManager.save();
 
-    const dpr = window.devicePixelRatio || 1;
-    if (q === 'low') {
-      this.renderer.setPixelRatio(Math.min(1.0, dpr * 0.75));
-      this.renderer.shadowMap.enabled = false;
-      this.mainCeilingLight.castShadow = false;
-    } else if (q === 'medium') {
-      this.renderer.setPixelRatio(Math.min(1.35, dpr));
-      this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = THREE.PCFShadowMap;
-      this.mainCeilingLight.castShadow = true;
-      this.mainCeilingLight.shadow.mapSize.set(1024, 1024);
-    } else {
-      // 'high' (Massimo Dettaglio Ultra HD)
-      this.renderer.setPixelRatio(Math.min(2.0, dpr));
-      this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      this.mainCeilingLight.castShadow = true;
-      this.mainCeilingLight.shadow.mapSize.set(2048, 2048);
-    }
-    if (this.mainCeilingLight.shadow.map) {
-      this.mainCeilingLight.shadow.map.dispose();
-      this.mainCeilingLight.shadow.map = null;
+    if (this.qualityComposer) {
+      this.qualityComposer.setQuality(q === 'high' ? 'high' : q === 'medium' ? 'medium' : 'low');
     }
 
     // Aggiorna tutti i riquadrini di selezione risoluzione grafica (sia in alto che nel menu)
@@ -356,12 +359,16 @@ class MiniZSimulatorApp {
 
   setDriveCameraMode(mode) {
     this.driveCameraMode = mode;
+    if (this.orbit) {
+      this.orbit.enabled = mode === 'pit_bench';
+      if (mode === 'pit_bench') {
+        this.camera.position.set(1.8, 1.55, 2.7);
+        this.orbit.target.set(2.45, -0.05, -1.8);
+      }
+    }
     document.querySelectorAll('.cam-pill').forEach((p) => {
       p.classList.toggle('active', p.dataset.cam === mode);
     });
-    if (mode === 'pit_bench') {
-      this.sound.speak('Rientro al banchetto da lavoro per controllo assetto e gomme!', 'normal');
-    }
   }
 
   cycleDriveCameraMode() {
@@ -801,52 +808,46 @@ class MiniZSimulatorApp {
     if (bestEl) bestEl.textContent = fmt(this.bestLapSec);
   }
 
-  // Aggiorna la visuale in prima persona dal Palco di Guida (o sul Banchetto da Lavoro)
+  // Aggiorna la visuale dal Palco Piloti con la stessa identica inquadratura, altezza e prospettiva di Slot-Car!
   updateDriverCamera(dt) {
     const carPos = new THREE.Vector3(this.car.state.x, this.car.state.y + 0.025, this.car.state.z);
 
     if (this.driveCameraMode === 'pit_bench') {
-      // Visuale ravvicinata per ispezionare l'auto e il telaio al centro della pista / banco
-      const offset = new THREE.Vector3(
-        Math.sin(performance.now() * 0.0005) * 0.24,
-        0.13,
-        Math.cos(performance.now() * 0.0005) * 0.24
-      );
-      this.camera.position.lerp(carPos.clone().add(offset), Math.min(1, dt * 8));
-      this.camera.fov = 35;
-      this.camera.updateProjectionMatrix();
-      this.camera.lookAt(carPos);
+      // Visuale libera Orbit nella sala (come "Ruota" in Slot-Car)
+      if (this.orbit) {
+        this.camera.fov = 50;
+        this.camera.updateProjectionMatrix();
+        this.orbit.update();
+      }
       return;
     }
 
     if (this.driveCameraMode === 'chase_drive') {
       const fwd = new THREE.Vector3(Math.sin(this.car.state.heading), 0, Math.cos(this.car.state.heading));
-      const desired = carPos.clone().addScaledVector(fwd, -0.48).add(new THREE.Vector3(0, 0.18, 0));
-      this.camera.position.lerp(desired, Math.min(1, dt * 12));
+      const desired = carPos.clone().addScaledVector(fwd, -0.52).add(new THREE.Vector3(0, 0.22, 0));
+      this.camera.position.lerp(desired, Math.min(1, dt * 10));
       this.camera.fov = 52;
       this.camera.updateProjectionMatrix();
-      this.camera.lookAt(carPos.clone().addScaledVector(fwd, 0.3));
+      this.camera.lookAt(carPos.clone().addScaledVector(fwd, 0.25));
       return;
     }
 
-    // VISTA DAGLI OCCHI SUL PALCO DI GUIDA (Altezza occhi 2.58m sopra il pavimento!)
-    const standEye = this.club.driverEyePos.clone();
-    // Leggero spostamento naturale della testa del pilota sul palco (+/- 12cm) quando segue l'auto a destra e sinistra
-    standEye.x += clamp(this.car.state.x * 0.045, -0.14, 0.14);
-    this.camera.position.lerp(standEye, Math.min(1, dt * 10));
-
-    // Zoom naturale quando l'auto si allontana nella parte opposta della pista RCP
-    const distToCar = standEye.distanceTo(carPos);
     if (this.driveCameraMode === 'stand_zoom') {
-      this.camera.fov = clamp(34 - distToCar * 2.2, 20, 32);
-    } else {
-      this.camera.fov = clamp(47 - distToCar * 1.6, 35, 45);
+      // Visuale Dall'Alto / Panoramica Tavolo (come "Dall'alto" in Slot-Car)
+      this.camera.position.set(2.45, 7.6, -1.85);
+      this.camera.fov = 48;
+      this.camera.updateProjectionMatrix();
+      this.camera.lookAt(2.45, 0, -1.9);
+      return;
     }
+
+    // VISUALE PALCO PILOTI (identica a Slot-Car: occhi a y = ROST.top + 1.64 = +1.24m sopra il tavolo, z = ROST.z0 + 0.36 = 1.91m, fov = 50°)
+    this.camera.position.set(2.45, ROST.top + 1.64, ROST.z0 + 0.36);
+    this.camera.fov = 50;
     this.camera.updateProjectionMatrix();
 
-    // Movimento fluido degli occhi/testa che seguono la Mini-Z
-    this.cameraLookTarget.lerp(carPos, Math.min(1, dt * 18));
-    this.camera.lookAt(this.cameraLookTarget);
+    const look = new THREE.Vector3(2.45, 0, -1.8).lerp(carPos, 0.35);
+    keepDriverCarVisible(this.camera, look, carPos);
   }
 
   loop(now) {
@@ -903,8 +904,15 @@ class MiniZSimulatorApp {
         const scrubber = document.getElementById('replay-scrubber');
         if (scrubber) scrubber.value = Math.round(rFrame.progressPercent);
       }
-      this.club.animateCharacters(now * 0.001, this.car.rootGroup.position, this.sound.isSpeaking);
-      this.renderer.render(this.scene, this.camera);
+      this.club.animateCharacters(
+        now * 0.001,
+        this.car.rootGroup.position,
+        this.sound.isSpeaking,
+        dt,
+        this.camera.position,
+        input.throttle
+      );
+      this.qualityComposer.render();
       return;
     }
 
@@ -993,9 +1001,16 @@ class MiniZSimulatorApp {
 
     // 7. Aggiorna Visuale dal Palco e Personaggi animati nella sala
     this.updateDriverCamera(dt);
-    this.club.animateCharacters(now * 0.001, this.car.rootGroup.position, this.sound.isSpeaking);
+    this.club.animateCharacters(
+      now * 0.001,
+      this.car.rootGroup.position,
+      this.sound.isSpeaking,
+      dt,
+      this.camera.position,
+      input.throttle
+    );
 
-    this.renderer.render(this.scene, this.camera);
+    this.qualityComposer.render();
   }
 }
 

@@ -8,6 +8,9 @@
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/jpeg" href="/app-icon.jpg" />
   <link rel="apple-touch-icon" href="/app-icon.jpg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,700;1,900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -15,18 +18,18 @@
   <div id="loading-screen" class="loading-overlay">
     <div class="loading-card">
       <div class="loading-top-row">
-        <span class="loading-tag">KYOSHO MINI-Z INDOOR ARENA • SCALA REALE 1:27</span>
-        <span class="version-pill">v1.0.0</span>
+        <span class="loading-tag">KYOSHO MINI-Z INDOOR CLUB • SCALA REALE 1:27</span>
+        <span class="version-pill">v1.2.0</span>
       </div>
       <div class="loading-hero">
         <img src="/app-icon.jpg" alt="Mini-Z Club Simulator Icon" class="loading-icon-img" />
         <div class="loading-title-wrap">
           <h1>MINI-Z CLUB SIMULATOR</h1>
-          <p class="loading-subtitle">Capannone RCP Track • Vista dal Palco di Guida • Fisica Telaio &amp; Telecronaca Live</p>
+          <p class="loading-subtitle">Sala Club Realistica • Tavolo Pista RCP • Officina 3 Banchi &amp; Direzione Gara</p>
           <div class="scale-badges">
             <span>🏎️ Auto: 17,2 × 7,8 cm</span>
-            <span>⬛ Mattonelle RCP: 50 × 50 cm</span>
-            <span>👀 Occhi Palco: 2,58 m</span>
+            <span>⬛ Tavolo RCP: +85 cm</span>
+            <span>👀 Pedana Piloti: +45 cm (Occhi +1,24 m)</span>
           </div>
         </div>
       </div>
@@ -65,7 +68,7 @@
       <!-- 1. Riquadrino Versione -->
       <div class="hud-box version-box" title="Versione attuale dell'applicazione">
         <span class="box-label">VERSIONE</span>
-        <span id="hud-version-val" class="box-value">v1.0.0</span>
+        <span id="hud-version-val" class="box-value">v1.2.0</span>
       </div>
 
       <!-- 2. Riquadrino 3 Modalità Risoluzione Grafica con indicatore attivo -->
@@ -133,12 +136,12 @@
 
     <!-- Controlli rapidi Visuale dal Palco e Commissario -->
     <div class="stand-controls-card">
-      <div class="card-header-strip">👀 POSTAZIONE PALCO (2,58m)</div>
+      <div class="card-header-strip">🎥 INQUADRATURE CLUB</div>
       <div class="cam-pills">
-        <button type="button" class="cam-pill active" data-cam="stand_normal">Vista Palco</button>
-        <button type="button" class="cam-pill" data-cam="stand_zoom">Palco Zoom</button>
-        <button type="button" class="cam-pill" data-cam="pit_bench">Vedi sul Banco</button>
-        <button type="button" class="cam-pill" data-cam="chase_drive">Dietro Auto</button>
+        <button type="button" class="cam-pill active" data-cam="stand_normal">Palco Piloti</button>
+        <button type="button" class="cam-pill" data-cam="stand_zoom">Dall'Alto</button>
+        <button type="button" class="cam-pill" data-cam="pit_bench">Ruota in Sala</button>
+        <button type="button" class="cam-pill" data-cam="chase_drive">Inseguimento</button>
       </div>
       <div class="quick-utility-row">
         <button type="button" id="btn-marshal-reset" class="utility-btn" title="Il commissario rimette dritta la Mini-Z in pista (Tasto R)">
