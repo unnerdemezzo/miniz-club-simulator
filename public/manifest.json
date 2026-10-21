@@ -1,0 +1,18 @@
+{
+  "name": "Mini-Z Club Simulator",
+  "short_name": "Mini-Z Sim",
+  "description": "Simulatore 3D in scala reale 1:27 di Kyosho Mini-Z RC con pista RCP, palco di guida, banco box e telecronaca in italiano.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0b0f19",
+  "theme_color": "#e11d48",
+  "icons": [
+    {
+      "src": "/app-icon.jpg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#e11d48" />
+  <title>Mini-Z Club Simulator • Scala Reale 1:27</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/jpeg" href="/app-icon.jpg" />
+  <link rel="apple-touch-icon" href="/app-icon.jpg" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- SCHERMATA DI CARICAMENTO UFFICIALE -->
+  <div id="loading-screen" class="loading-overlay">
+    <div class="loading-card">
+      <div class="loading-top-row">
+        <span class="loading-tag">KYOSHO MINI-Z INDOOR ARENA • SCALA REALE 1:27</span>
+        <span class="version-pill">v1.0.0</span>
+      </div>
+      <div class="loading-hero">
+        <img src="/app-icon.jpg" alt="Mini-Z Club Simulator Icon" class="loading-icon-img" />
+        <div class="loading-title-wrap">
+          <h1>MINI-Z CLUB SIMULATOR</h1>
+          <p class="loading-subtitle">Capannone RCP Track • Vista dal Palco di Guida • Fisica Telaio &amp; Telecronaca Live</p>
+          <div class="scale-badges">
+            <span>🏎️ Auto: 17,2 × 7,8 cm</span>
+            <span>⬛ Mattonelle RCP: 50 × 50 cm</span>
+            <span>👀 Occhi Palco: 2,58 m</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="loading-progress-section">
+        <div class="loading-status-row">
+          <span id="loading-status-text">Preparazione sala club e caricamento modello 3D Ferrari 499P...</span>
+          <span id="loading-percent">0%</span>
+        </div>
+        <div class="loading-bar-bg">
+          <div id="loading-bar-fill" class="loading-bar-fill" style="width: 8%;"></div>
+        </div>
+      </div>
+
+      <div class="loading-tips">
+        <strong>💡 Consiglio dal Banco Box:</strong> Il profilo del tuo Joypad e l'assetto vengono salvati <em>automaticamente</em> per ogni combinazione di Auto e Pista!
+      </div>
+    </div>
+  </div>
+
+  <!-- CANVAS 3D DEL SIMULATORE -->
+  <canvas id="sim-canvas"></canvas>
+
+  <!-- BARRA SUPERIORE CON RIQUADRINI CHIARI (VERSIONE, 3 RISOLUZIONI GRAFICHE, FPS, MENU, INSTALLA APP) -->
+  <header class="top-hud-bar">
+    <div class="brand-cluster">
+      <img src="/app-icon.jpg" alt="Icona" class="hud-mini-icon" />
+      <div>
+        <div class="hud-title">MINI-Z CLUB</div>
+        <div id="hud-active-profile-label" class="hud-sub">Ferrari 499P • Circuito Club Veloce</div>
+      </div>
+    </div>
+
+    <!-- Riquadrini di stato richiesti: Versione, 3 Modalità Grafiche con selezione evidente, FPS in tempo reale -->
+    <div class="status-boxes-cluster">
+      <!-- 1. Riquadrino Versione -->
+      <div class="hud-box version-box" title="Versione attuale dell'applicazione">
+        <span class="box-label">VERSIONE</span>
+        <span id="hud-version-val" class="box-value">v1.0.0</span>
+      </div>
+
+      <!-- 2. Riquadrino 3 Modalità Risoluzione Grafica con indicatore attivo -->
+      <div class="hud-box resolution-box" title="Seleziona una delle 3 modalità di risoluzione grafica">
+        <span class="box-label">RISOLUZIONE GRAFICA</span>
+        <div class="res-modes-group">
+          <button type="button" class="res-mode-btn" data-quality="low">Bassa</button>
+          <button type="button" class="res-mode-btn" data-quality="medium">Media</button>
+          <button type="button" class="res-mode-btn active" data-quality="high">Alta</button>
+        </div>
+      </div>
+
+      <!-- 3. Riquadrino FPS in Tempo Reale -->
+      <div class="hud-box fps-box" title="Fotogrammi al secondo in tempo reale">
+        <span class="box-label"> PRESTAZIONI</span>
+        <div class="fps-readout">
+          <span id="fps-dot" class="fps-dot green"></span>
+          <span id="hud-fps-val" class="box-value">60 FPS</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pulsanti Azione Rapida (Menu Unico, Replay, Installa App) -->
+    <div class="top-actions-cluster">
+      <button id="btn-open-menu" class="hud-action-btn primary-btn">
+        ⚙️ Menu &amp; Banco Box
+      </button>
+      <button id="btn-quick-replay" class="hud-action-btn">
+        🎬 Replay
+      </button>
+      <button id="btn-install-app" class="hud-action-btn install-btn">
+        📲 Installa App
+      </button>
+    </div>
+  </header>
+
+  <!-- BANNER TELECRONACA DIREZIONE GARA IN TEMPO REALE -->
+  <div id="commentary-banner" class="commentary-banner">
+    <div class="commentary-mic-badge">
+      <span class="mic-dot"></span>
+      <span>DIREZIONE GARA LIVE</span>
+    </div>
+    <div id="commentary-text" class="commentary-text">
+      Pilota sul palco di guida con la Ferrari 499P! Pista RCP libera, via al cronometro!
+    </div>
+  </div>
+
+  <!-- CRONOMETRO IC-TAG E VISUALE (LATO SINISTRO) -->
+  <aside class="left-telemetry-panel">
+    <div class="timing-card">
+      <div class="card-header-strip">⏱️ CRONOMETRO KYOSHO IC-TAG</div>
+      <div class="timing-row">
+        <span>GIRO ATTUALE (<strong id="hud-lap-num">0</strong>)</span>
+        <strong id="hud-cur-lap" class="time-digital">0.00s</strong>
+      </div>
+      <div class="timing-row">
+        <span>ULTIMO GIRO</span>
+        <strong id="hud-last-lap" class="time-digital cyan">--.--s</strong>
+      </div>
+      <div class="timing-row">
+        <span>RECORD PISTA</span>
+        <strong id="hud-best-lap" class="time-digital green">--.--s</strong>
+      </div>
+    </div>
+
+    <!-- Controlli rapidi Visuale dal Palco e Commissario -->
+    <div class="stand-controls-card">
+      <div class="card-header-strip">👀 POSTAZIONE PALCO (2,58m)</div>
+      <div class="cam-pills">
+        <button type="button" class="cam-pill active" data-cam="stand_normal">Vista Palco</button>
+        <button type="button" class="cam-pill" data-cam="stand_zoom">Palco Zoom</button>
+        <button type="button" class="cam-pill" data-cam="pit_bench">Vedi sul Banco</button>
+        <button type="button" class="cam-pill" data-cam="chase_drive">Dietro Auto</button>
+      </div>
+      <div class="quick-utility-row">
+        <button type="button" id="btn-marshal-reset" class="utility-btn" title="Il commissario rimette dritta la Mini-Z in pista (Tasto R)">
+          🦺 Chiama Commissario (R)
+        </button>
+        <button type="button" id="btn-toggle-shell-quick" class="utility-btn" title="Mostra o nascondi la carrozzeria sopra il telaio">
+          🔍 Togli Carrozzeria
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CRUSCOTTO VELOCITÀ E BARRE RADIOCOMANDO IN DIRETTA (BASSO DESTRA) -->
+  <aside class="right-telemetry-panel">
+    <div class="speed-card">
+      <div class="speed-main">
+        <span id="hud-speed-real">0.0</span>
+        <small>km/h reali</small>
+      </div>
+      <div class="speed-scale-sub">
+        Velocità in scala 1:27: <strong id="hud-speed-scale">0</strong> km/h
+      </div>
+      <div class="live-bars">
+        <div class="bar-row">
+          <span>STERZO</span>
+          <div class="bar-track center-zero">
+            <div id="hud-steer-bar" class="bar-fill steer-fill"></div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <span>GAS / FRENO</span>
+          <div class="bar-track">
+            <div id="hud-thr-bar" class="bar-fill thr-fill"></div>
+          </div>
+        </div>
+      </div>
+      <div id="hud-controller-status" class="controller-pill">
+        ⌨️ Tastiera (Frecce / WASD) • Collega Joypad quando vuoi
+      </div>
+    </div>
+  </aside>
+
+  <!-- BARRA DI CONTROLLO REPLAY MULTICAMERA (VISIBILE DURANTE IL REPLAY) -->
+  <div id="replay-bar" class="replay-overlay-bar hidden">
+    <div class="replay-top">
+      <span class="replay-live-badge">🔴 MODALITÀ REPLAY MULTICAMERA</span>
+      <div id="replay-cam-buttons" class="replay-cam-selector"></div>
+      <button type="button" id="btn-close-replay" class="replay-close-btn">✖ Torna alla Guida</button>
+    </div>
+    <div class="replay-controls-row">
+      <button type="button" id="btn-replay-playpause" class="replay-ctrl-btn">⏸ Pausa</button>
+      <button type="button" class="replay-ctrl-btn speed-btn" data-speed="0.5">0.5x Rallentatore</button>
+      <button type="button" class="replay-ctrl-btn speed-btn active" data-speed="1">1x Normale</button>
+      <button type="button" class="replay-ctrl-btn speed-btn" data-speed="2">2x Veloce</button>
+      <input type="range" id="replay-scrubber" min="0" max="100" value="0" class="replay-slider" />
+    </div>
+  </div>
+
+  <!-- MENU UNICO, ORDINATO E AMPLIABILE (5 SCHEDE CHIARE SENZA DOPPIONI) -->
+  <div id="main-menu-modal" class="menu-modal hidden">
+    <div class="menu-window">
+      <div class="menu-header">
+        <div class="menu-header-title">
+          <img src="/app-icon.jpg" alt="Logo" class="menu-logo" />
+          <div>
+            <h2>CENTRO CONTROLLO MINI-Z CLUB</h2>
+            <p id="menu-profile-indicator">Salvataggio automatico attivo per: Ferrari 499P • Circuito Club Veloce</p>
+          </div>
+        </div>
+        <button type="button" id="btn-close-menu" class="menu-close-btn">✖ Torna in Pista</button>
+      </div>
+
+      <!-- Barra delle 5 Schede (facilmente ampliabile) -->
+      <nav class="menu-tabs-nav">
+        <button type="button" class="menu-tab-btn active" data-tab="tab-track">🏁 1. Pista &amp; Gara</button>
+        <button type="button" class="menu-tab-btn" data-tab="tab-workbench">🔧 2. Banco Box (Auto &amp; Assetto)</button>
+        <button type="button" class="menu-tab-btn" data-tab="tab-controller">🎮 3. Radiocomando &amp; Profili</button>
+        <button type="button" class="menu-tab-btn" data-tab="tab-replay">🎬 4. Replay &amp; Telecamere</button>
+        <button type="button" class="menu-tab-btn" data-tab="tab-system">⚙️ 5. Grafica, Audio &amp; Backup</button>
+      </nav>
+
+      <!-- CONTENUTO DELLE SCHEDE -->
+      <div class="menu-tab-body">
+        <!-- SCHEDA 1: PISTA & GARA -->
+        <section id="tab-track" class="tab-pane active">
+          <div class="pane-header">
+            <h3>Scegli il Tracciato Kyosho RCP Track (Scala Reale 1:1)</h3>
+            <p>Tutti i circuiti hanno il rettilineo principale lungo posizionato proprio sotto al palco di guida.</p>
+          </div>
+          <div id="track-cards-grid" class="cards-grid"></div>
+
+          <div class="options-strip">
+            <label class="toggle-Row">
+              <input type="checkbox" id="chk-reverse-track" />
+              <span>🔄 Inverti senso di marcia della pista (Antiorario)</span>
+            </label>
+            <button type="button" id="btn-reset-lap-session" class="secondary-btn">
+              ⏱️ Azzera Cronometro Sessione
+            </button>
+          </div>
+        </section>
+
+        <!-- SCHEDA 2: BANCO BOX (AUTO, TELAIO, GOMME, MOTORE, AMMORTIZZATORI) -->
+        <section id="tab-workbench" class="tab-pane">
+          <div class="workbench-top-banner">
+            <div>
+              <h3>🔧 Il Tuo Banchetto da Lavoro (Scala 1:27 • 17,2 × 7,8 cm)</h3>
+              <p>Ogni modifica viene salvata in automatico per questa Auto e questa Pista.</p>
+            </div>
+            <div class="workbench-quick-btns">
+              <button type="button" id="btn-Toggle-naked-chassis" class="secondary-btn">
+                🔍 Togli Carrozzeria (Vedi Telaio Nudo)
+              </button>
+              <label class="upload-glb-label">
+                📂 Aggiungi Modello 3D (.glb)
+                <input type="file" id="input-custom-glb" accept=".glb,.gltf" hidden />
+              </label>
+            </div>
+          </div>
+
+          <div class="setup-grid">
+            <div class="setup-field">
+              <label>🏎️ Carrozzeria AutoScale 3D</label>
+              <select id="sel-body"></select>
+              <small id="desc-body" class="field-desc"></small>
+            </div>
+
+            <div class="setup-field">
+              <label>🔩 Telaio (Chassis RWD / AWD 4x4)</label>
+              <select id="sel-chassis"></select>
+              <small id="desc-chassis" class="field-desc"></small>
+            </div>
+
+            <div class="setup-field">
+              <label>🛞 Gomme Anteriori (Inserimento &amp; Grip)</label>
+              <select id="sel-front-tire"></select>
+              <small id="desc-front-tire" class="field-desc"></small>
+            </div>
+
+            <div class="setup-field">
+              <label>🛞 Gomme Posteriori (Trazione &amp; Drift)</label>
+              <select id="sel-rear-tire"></select>
+              <small id="desc-rear-tire" class="field-desc"></small>
+            </div>
+
+            <div class="setup-field">
+              <label>⚡ Motore Elettrico (Spazzole / Brushless)</label>
+              <select id="sel-motor"></select>
+              <small id="desc-motor" class="field-desc"></small>
+            </div>
+
+            <div class="setup-field">
+              <label>⚙️ Pignone Motore (6T - 9T)</label>
+              <select id="sel-pinion"></select>
+              <small class="field-desc">6T = più scatto nelle curve strette • 9T = più velocità in fondo al rettilineo.</small>
+            </div>
+
+            <div class="setup-field">
+              <label>🌀 Molle Sospensioni Anteriori</label>
+              <select id="sel-front-spring"></select>
+              <small id="desc-front-spring" class="field-desc"></small>
+            </div>
+
+            <div class="setup-field">
+              <label>📏 T-Plate Posteriore in Carbonio</label>
+              <select id="sel-tplate"></select>
+              <small id="desc-tplate" class="field-desc"></small>
+            </div>
+
+            <div class="setup-field">
+              <label>🔄 Differenziale Posteriore</label>
+              <select id="sel-diff"></select>
+              <small id="desc-diff" class="field-desc"></small>
+            </div>
+          </div>
+        </section>
+
+        <!-- SCHEDA 3: RADIOCOMANDO, JOYPAD & PROFILI SALVATI PER AUTO/PISTA -->
+        <section id="tab-controller" class="tab-pane">
+          <!-- Riquadro Copia/Applica Profili Salvati tra Auto e Piste -->
+          <div class="profile-copier-box">
+            <div class="copier-info">
+              <h4>💾 Profili Automatici Auto + Pista (Copia e Applica)</h4>
+              <p>Tutte le regolazioni qui sotto si salvano da sole per l'auto e la pista in uso. Vuoi applicare un profilo già fatto a questa auto e pista?</p>
+            </div>
+            <div class="copier-controls">
+              <select id="sel-saved-profiles"></select>
+              <button type="button" id="btn-apply-profile-ctrl" class="secondary-btn">Applica Regolazioni Joypad</button>
+              <button type="button" id="btn-apply-profile-both" class="primary-btn">Applica Joypad + Assetto Auto</button>
+            </div>
+          </div>
+
+          <div class="controller-columns">
+            <!-- Colonna Sinistra: Sensibilità, Esponenziale, Dual Rate, Zona Morta, Trim -->
+            <div class="ctrl-col">
+              <h4>📡 Regolazioni Fini Radiocomando / Joypad</h4>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Esponenziale Sterzo (ST EXP)</span>
+                  <strong id="val-steer-exp">-25%</strong>
+                </div>
+                <input type="range" id="rng-steer-exp" min="-80" max="80" step="5" />
+                <small>Negativo (es. -25%) = più dolce al centro per andare dritto in rettilineo.</small>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Escursione Massima Sterzo (Dual Rate D/R)</span>
+                  <strong id="val-steer-dr">100%</strong>
+                </div>
+                <input type="range" id="rng-steer-dr" min="45" max="125" step="5" />
+                <small>Limita o aumenta il raggio di sterzata massimo delle ruote anteriori.</small>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Velocità &amp; Sensibilità Servosterzo</span>
+                  <strong id="val-servo-speed">100%</strong>
+                </div>
+                <input type="range" id="rng-servo-speed" min="35" max="150" step="5" />
+                <small>Rapidità con cui le ruote anteriori seguono la levetta del Joypad.</small>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Esponenziale Acceleratore (TH EXP)</span>
+                  <strong id="val-thr-exp">0%</strong>
+                </div>
+                <input type="range" id="rng-thr-exp" min="-80" max="80" step="5" />
+                <small>Addolcisce o rende più aggressiva l'apertura del gas.</small>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Potenza Massima Freno (EPA Freno)</span>
+                  <strong id="val-brake-epa">95%</strong>
+                </div>
+                <input type="range" id="rng-brake-epa" min="25" max="125" step="5" />
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Zona Morta Levetta (Deadzone)</span>
+                  <strong id="val-deadzone">6%</strong>
+                </div>
+                <input type="range" id="rng-deadzone" min="0" max="28" step="1" />
+                <small>Evita che l'auto sterzi da sola con la levetta a riposo.</small>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Centratura Sterzo (ST Trim)</span>
+                  <strong id="val-steer-trim">0</strong>
+                </div>
+                <input type="range" id="rng-steer-trim" min="-20" max="20" step="1" />
+              </div>
+
+              <div class="checkbox-pair">
+                <label><input type="checkbox" id="chk-inv-steer" /> Inverti Sterzo (Reverse ST)</label>
+                <label><input type="checkbox" id="chk-inv-thr" /> Inverti Gas/Freno (Reverse TH)</label>
+              </div>
+            </div>
+
+            <!-- Colonna Destra: Assegnazione Tasti Joypad & Test in Diretta -->
+            <div class="ctrl-col">
+              <h4>🎮 Impostazione Tasti &amp; Calibrazione in Diretta</h4>
+              <p id="pad-detected-banner" class="pad-status-box">
+                Muovi o premi un tasto sul tuo Joypad per rilevarlo automaticamente.
+              </p>
+
+              <!-- Barre di prova in tempo reale dentro il menu -->
+              <div class="test-bars-box">
+                <div class="bar-row">
+                  <span>Prova Sterzo:</span>
+                  <div class="bar-track center-zero">
+                    <div id="menu-test-steer" class="bar-fill steer-fill"></div>
+                  </div>
+                </div>
+                <div class="bar-row">
+                  <span>Prova Gas / Freno:</span>
+                  <div class="bar-track">
+                    <div id="menu-test-thr" class="bar-fill thr-fill"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bindings-list">
+                <div class="bind-item">
+                  <span>Asse Sterzo Joypad</span>
+                  <button type="button" class="bind-btn" data-bind-field="padSteerAxis" data-bind-type="pad_axis">
+                    Asse <span id="lbl-padSteerAxis">0</span> (Clicca e muovi levetta)
+                  </button>
+                </div>
+                <div class="bind-item">
+                  <span>Grilletto Acceleratore Joypad</span>
+                  <button type="button" class="bind-btn" data-bind-field="padThrottleBtn" data-bind-type="pad_button">
+                    Tasto <span id="lbl-padThrottleBtn">7 (R2)</span> (Clicca e premi)
+                  </button>
+                </div>
+                <div class="bind-item">
+                  <span>Grilletto Freno / Retro Joypad</span>
+                  <button type="button" class="bind-btn" data-bind-field="padBrakeBtn" data-bind-type="pad_button">
+                    Tasto <span id="lbl-padBrakeBtn">6 (L2)</span> (Clicca e premi)
+                  </button>
+                </div>
+                <div class="bind-item">
+                  <span>Tasto Chiama Commissario (Joypad)</span>
+                  <button type="button" class="bind-btn" data-bind-field="padMarshalBtn" data-bind-type="pad_button">
+                    Tasto <span id="lbl-padMarshalBtn">3 (Y)</span>
+                  </button>
+                </div>
+                <div class="bind-item">
+                  <span>Tasto Cambia Visuale (Joypad)</span>
+                  <button type="button" class="bind-btn" data-bind-field="padCameraBtn" data-bind-type="pad_button">
+                    Tasto <span id="lbl-padCameraBtn">1 (B)</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SCHEDA 4: REPLAY MULTICAMERA -->
+        <section id="tab-replay" class="tab-pane">
+          <div class="pane-header">
+            <h3>🎬 Regia Replay &amp; 5 Telecamere in Pista</h3>
+            <p>Il simulatore registra automaticamente gli ultimi 60 secondi di guida. Scegli la telecamera che preferisci e avvia il Replay!</p>
+          </div>
+          <div id="menu-replay-cams-grid" class="cards-grid"></div>
+          <div class="options-strip">
+            <button type="button" id="btn-start-replay-from-menu" class="primary-btn">
+              ▶️ Avvia Replay Ora
+            </button>
+          </div>
+        </section>
+
+        <!-- SCHEDA 5: GRAFICA, AUDIO, INSTALLAZIONE E BACKUP COMPLETO -->
+        <section id="tab-system" class="tab-pane">
+          <div class="system-grid">
+            <!-- Blocco Backup / Esporta / Importa Tutta la Configurazione -->
+            <div class="sys-card highlight-card">
+              <h4>🛡️ Backup Totale Configurazione (Salva su File)</h4>
+              <p>Esporta in un file unico sul tuo computer tutti i profili del Joypad, gli assetti delle auto per ogni pista, i record sui giri e le opzioni grafiche. Potrai ricaricarlo in qualsiasi momento!</p>
+              <div class="backup-btns-row">
+                <button type="button" id="btn-export-config" class="primary-btn">
+                  💾 Esporta Tutta la Configurazione (.json)
+                </button>
+                <label class="secondary-btn file-label-btn">
+                  📂 Carica / Ripristina da File
+                  <input type="file" id="input-import-config" accept=".json" hidden />
+                </label>
+              </div>
+              <div id="backup-status-msg" class="status-feedback"></div>
+            </div>
+
+            <!-- Blocco Risoluzione Grafica & Installa App -->
+            <div class="sys-card">
+              <h4>🖥️ Modalità di Risoluzione Grafica &amp; App</h4>
+              <p>Puoi cambiare la risoluzione anche dal riquadrino in alto sullo schermo:</p>
+              <div class="res-modes-group large-group">
+                <button type="button" class="res-mode-btn" data-quality="low">🟢 Bassa (Massima Fluidità)</button>
+                <button type="button" class="res-mode-btn" data-quality="medium">🔵 Media (Bilanciata)</button>
+                <button type="button" class="res-mode-btn active" data-quality="high">🟣 Alta (Massimo Dettaglio Ultra HD)</button>
+              </div>
+              <hr class="sys-divider" />
+              <h4>📲 Installa sul tuo Computer</h4>
+              <p>Installa Mini-Z Club Simulator come applicazione con icona sul Desktop:</p>
+              <button type="button" id="btn-install-app-menu" class="install-btn large-install">
+                📲 Installa App Mini-Z Club Simulator
+              </button>
+            </div>
+
+            <!-- Blocco Telecronaca & Audio -->
+            <div class="sys-card">
+              <h4>🎙️ Telecronaca in Tempo Reale &amp; Suoni</h4>
+              <label class="toggle-Row">
+                <input type="checkbox" id="chk-commentary-enabled" checked />
+                <span>Abilita Voce Telecronista Italiano in Diretta</span>
+              </label>
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Volume Voce Telecronista</span>
+                  <strong id="val-vol-comm">95%</strong>
+                </div>
+                <input type="range" id="rng-vol-comm" min="0" max="100" step="5" value="95" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Volume Sibilo Motore Mini-Z &amp; Gomme</span>
+                  <strong id="val-vol-motor">65%</strong>
+                </div>
+                <input type="range" id="rng-vol-motor" min="0" max="100" step="5" value="65" />
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

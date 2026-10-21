@@ -1,0 +1,1158 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+body, html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #070b14;
+  color: #f8fafc;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+#sim-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 1;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ================= SCHERMATA DI CARICAMENTO ================= */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: radial-gradient(circle at center, #111827 0%, #050811 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  transition: opacity 0.45s ease;
+}
+
+.loading-card {
+  width: min(740px, 96vw);
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid rgba(225, 29, 72, 0.65);
+  border-radius: 20px;
+  padding: 28px 32px;
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.85), 0 0 40px rgba(225, 29, 72, 0.25);
+}
+
+.loading-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.loading-tag {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  color: #f43f5e;
+  text-transform: uppercase;
+}
+
+.version-pill {
+  background: #1e293b;
+  border: 1px solid #38bdf8;
+  color: #38bdf8;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.loading-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.loading-icon-img {
+  width: 118px;
+  height: 118px;
+  border-radius: 22px;
+  object-fit: cover;
+  border: 2px solid #f43f5e;
+  box-shadow: 0 10px 28px rgba(225, 29, 72, 0.45);
+}
+
+.loading-title-wrap h1 {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.loading-subtitle {
+  color: #94a3b8;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.scale-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scale-badges span {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.loading-progress-section {
+  margin-bottom: 18px;
+}
+
+.loading-status-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin-bottom: 8px;
+}
+
+.loading-bar-bg {
+  width: 100%;
+  height: 14px;
+  background: #090d16;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.loading-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #e11d48 0%, #f59e0b 50%, #22c55e 100%);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.loading-tips {
+  background: rgba(2, 132, 199, 0.14);
+  border-left: 4px solid #38bdf8;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+/* ================= BARRA SUPERIORE & RIQUADRINI STATO ================= */
+.top-hud-bar {
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+
+.brand-cluster,
+.status-boxes-cluster,
+.top-actions-cluster {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-cluster {
+  background: rgba(11, 15, 25, 0.86);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 6px 14px 6px 8px;
+  border-radius: 12px;
+}
+
+.hud-mini-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1.5px solid #e11d48;
+}
+
+.hud-title {
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.7px;
+  color: #ffffff;
+}
+
+.hud-sub {
+  font-size: 11px;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+/* RIQUADRINI VERSIONE, 3 MODALITÀ RISOLUZIONE, FPS */
+.hud-box {
+  background: rgba(11, 15, 25, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1.5px solid rgba(148, 163, 184, 0.28);
+  border-radius: 11px;
+  padding: 5px 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+}
+
+.box-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  color: #94a3b8;
+  margin-bottom: 3px;
+}
+
+.box-value {
+  font-size: 14px;
+  font-weight: 900;
+  font-family: Consolas, 'Courier New', monospace;
+  color: #f8fafc;
+}
+
+.version-box {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.version-box .box-value {
+  color: #38bdf8;
+}
+
+.res-modes-group {
+  display: flex;
+  gap: 5px;
+}
+
+.res-mode-btn {
+  background: rgba(30, 41, 59, 0.85);
+  border: 1.5px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.res-mode-btn:hover {
+  border-color: #f8fafc;
+  color: #ffffff;
+}
+
+/* Riquadrino evidenziato che indica quale risoluzione grafica è selezionata */
+.res-mode-btn.active {
+  background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
+  border: 2px solid #fda4af;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(225, 29, 72, 0.65);
+  transform: scale(1.03);
+}
+
+.fps-readout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fps-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.fps-dot.green {
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+.fps-dot.yellow {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+.fps-dot.red {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+.hud-action-btn {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1.5px solid rgba(148, 163, 184, 0.35);
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 10px 15px;
+  border-radius: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hud-action-btn:hover {
+  border-color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
+  border-color: #fb7185;
+  color: #ffffff;
+}
+
+.install-btn {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border: 1.5px solid #38bdf8;
+  color: #ffffff;
+}
+
+/* ================= BANNER TELECRONACA DIREZIONE GARA ================= */
+.commentary-banner {
+  position: fixed;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 18;
+  background: rgba(9, 13, 22, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1.5px solid rgba(250, 204, 21, 0.45);
+  border-radius: 999px;
+  padding: 7px 18px 7px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(760px, 92vw);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.commentary-banner.speaking {
+  border-color: #facc15;
+  box-shadow: 0 0 22px rgba(250, 204, 21, 0.35);
+}
+
+.commentary-mic-badge {
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 4px 10px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.mic-dot {
+  width: 7px;
+  height: 7px;
+  background: #ffffff;
+  border-radius: 50%;
+  animation: pulseMic 1s infinite alternate;
+}
+
+@keyframes pulseMic {
+  from { opacity: 0.35; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1.2); }
+}
+
+.commentary-text {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fef08a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ================= PANNELLI TELEMETRIA LATERALI ================= */
+.left-telemetry-panel {
+  position: fixed;
+  bottom: 14px;
+  left: 14px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 275px;
+}
+
+.timing-card,
+.stand-controls-card,
+.speed-card {
+  background: rgba(11, 15, 25, 0.86);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+
+.card-header-strip {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.9px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.timing-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 3px 0;
+  color: #cbd5e1;
+}
+
+.time-digital {
+  font-family: Consolas, monospace;
+  font-size: 16px;
+  font-weight: 900;
+  color: #facc15;
+}
+
+.time-digital.cyan { color: #38bdf8; }
+.time-digital.green { color: #22c55e; }
+
+.cam-pills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.cam-pill {
+  background: #1e293b;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.cam-pill.active {
+  background: #0284c7;
+  border-color: #7dd3fc;
+  color: #ffffff;
+}
+
+.quick-utility-row {
+  display: flex;
+  gap: 6px;
+}
+
+.utility-btn {
+  flex: 1;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(250, 204, 21, 0.4);
+  color: #fde047;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.utility-btn:hover {
+  background: rgba(250, 204, 21, 0.18);
+}
+
+.right-telemetry-panel {
+  position: fixed;
+  bottom: 14px;
+  right: 14px;
+  z-index: 15;
+  width: 265px;
+}
+
+.speed-main {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.speed-main span {
+  font-size: 34px;
+  font-weight: 900;
+  font-family: Consolas, monospace;
+  color: #ffffff;
+}
+
+.speed-main small {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.speed-scale-sub {
+  font-size: 11.5px;
+  color: #38bdf8;
+  margin-bottom: 10px;
+}
+
+.live-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #94a3b8;
+}
+
+.bar-row span {
+  width: 68px;
+}
+
+.bar-track {
+  flex: 1;
+  height: 8px;
+  background: #090d16;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.steer-fill {
+  background: #38bdf8;
+  width: 50%;
+}
+
+.thr-fill {
+  background: linear-gradient(90deg, #22c55e, #f59e0b);
+  width: 0%;
+}
+
+.controller-pill {
+  font-size: 10.5px;
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.75);
+  padding: 5px 8px;
+  border-radius: 6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ================= BARRA REPLAY MULTICAMERA ================= */
+.replay-overlay-bar {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(860px, 95vw);
+  background: rgba(11, 15, 25, 0.94);
+  backdrop-filter: blur(12px);
+  border: 2px solid #e11d48;
+  border-radius: 16px;
+  padding: 12px 18px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+}
+
+.replay-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.replay-live-badge {
+  font-size: 12px;
+  font-weight: 900;
+  color: #fb7185;
+}
+
+.replay-cam-selector {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.replay-cam-btn {
+  background: #1e293b;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #e2e8f0;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.replay-cam-btn.active {
+  background: #e11d48;
+  border-color: #fda4af;
+  color: #ffffff;
+}
+
+.replay-close-btn {
+  background: #334155;
+  border: 1px solid #94a3b8;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.replay-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.replay-ctrl-btn {
+  background: #1e293b;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #f8fafc;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.replay-ctrl-btn.active {
+  background: #0284c7;
+  border-color: #7dd3fc;
+}
+
+.replay-slider {
+  flex: 1;
+  accent-color: #e11d48;
+}
+
+/* ================= FINESTRA MENU UNICO (5 SCHEDE) ================= */
+.menu-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(5, 8, 17, 0.76);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.menu-window {
+  width: min(1040px, 96vw);
+  max-height: 90vh;
+  background: #0f172a;
+  border: 2px solid rgba(148, 163, 184, 0.3);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.85);
+}
+
+.menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px;
+  background: #090d16;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.menu-header-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.menu-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 11px;
+  border: 1.5px solid #e11d48;
+}
+
+.menu-header-title h2 {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.menu-header-title p {
+  font-size: 12px;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.menu-close-btn {
+  background: #e11d48;
+  border: none;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.menu-tabs-nav {
+  display: flex;
+  gap: 6px;
+  padding: 10px 22px;
+  background: #111827;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  overflow-x: auto;
+}
+
+.menu-tab-btn {
+  background: #1e293b;
+  border: 1.5px solid transparent;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 9px 15px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.menu-tab-btn.active {
+  background: #0284c7;
+  border-color: #7dd3fc;
+  color: #ffffff;
+}
+
+.menu-tab-body {
+  padding: 20px 22px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.tab-pane {
+  display: none;
+}
+
+.tab-pane.active {
+  display: block;
+}
+
+.pane-header {
+  margin-bottom: 16px;
+}
+
+.pane-header h3 {
+  font-size: 17px;
+  margin-bottom: 4px;
+}
+
+.pane-header p {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.choice-card {
+  background: #1e293b;
+  border: 2px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.choice-card:hover {
+  border-color: #94a3b8;
+}
+
+.choice-card.active {
+  background: rgba(2, 132, 199, 0.2);
+  border-color: #38bdf8;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.25);
+}
+
+.choice-card h4 {
+  font-size: 14px;
+  margin-bottom: 4px;
+  color: #ffffff;
+}
+
+.choice-card .card-meta {
+  font-size: 11px;
+  color: #38bdf8;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.choice-card p {
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.options-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #090d16;
+  padding: 12px 16px;
+  border-radius: 12px;
+}
+
+.toggle-Row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary-btn {
+  background: #1e293b;
+  border: 1.5px solid #475569;
+  color: #f8fafc;
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 8px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.secondary-btn:hover {
+  border-color: #38bdf8;
+}
+
+/* ================= SCHEDA BANCO BOX ================= */
+.workbench-top-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #090d16;
+  padding: 14px 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.workbench-top-banner p {
+  font-size: 12.5px;
+  color: #94a3b8;
+}
+
+.workbench-quick-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.upload-glb-label {
+  background: #0284c7;
+  border: 1.5px solid #7dd3fc;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 8px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.setup-field {
+  background: #1e293b;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  padding: 12px 14px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setup-field label {
+  font-size: 13px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.setup-field select,
+.copier-controls select {
+  background: #090d16;
+  color: #ffffff;
+  border: 1px solid #475569;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.field-desc {
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+/* ================= SCHEDA RADIOCOMANDO & PROFILI ================= */
+.profile-copier-box {
+  background: rgba(2, 132, 199, 0.14);
+  border: 1.5px solid #38bdf8;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.copier-info h4 {
+  font-size: 14px;
+  color: #38bdf8;
+  margin-bottom: 3px;
+}
+
+.copier-info p {
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.copier-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.copier-controls select {
+  flex: 1;
+  min-width: 240px;
+}
+
+.controller-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.ctrl-col {
+  background: #1e293b;
+  border-radius: 14px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.ctrl-col h4 {
+  font-size: 15px;
+  margin-bottom: 12px;
+  color: #facc15;
+}
+
+.slider-row {
+  margin-bottom: 12px;
+}
+
+.slider-label-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.slider-row input[type="range"] {
+  width: 100%;
+  accent-color: #38bdf8;
+}
+
+.slider-row small {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.checkbox-pair {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.pad-status-box {
+  background: #090d16;
+  border-left: 4px solid #22c55e;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.test-bars-box {
+  background: #090d16;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bindings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bind-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #090d16;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.bind-btn {
+  background: #334155;
+  border: 1px solid #64748b;
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.bind-btn.listening {
+  background: #e11d48;
+  border-color: #fda4af;
+  animation: pulseMic 0.7s infinite alternate;
+}
+
+/* ================= SCHEDA SISTEMA & BACKUP ================= */
+.system-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 16px;
+}
+
+.sys-card {
+  background: #1e293b;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sys-card.highlight-card {
+  border: 2px solid #22c55e;
+}
+
+.sys-card p {
+  font-size: 12.5px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.backup-btns-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-label-btn {
+  text-align: center;
+  display: inline-block;
+}
+
+.large-group {
+  flex-direction: column;
+}
+
+.large-group .res-mode-btn {
+  padding: 9px 12px;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.sys-divider {
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  margin: 6px 0;
+}
+
+.large-install {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.status-feedback {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4ade80;
+}
