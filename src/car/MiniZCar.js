@@ -193,12 +193,12 @@ export class MiniZCar {
               if (mat.map) mat.map.anisotropy = 8;
 
               if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
-                // Vernice vera con saturazione leggermente attenuata per il massimo fotorealismo
+                // Vernice vera con saturazione attenuata per il massimo fotorealismo
                 if (mat.color) {
                   mat.color.set(tintHex);
                   const hsl = { h: 0, s: 0, l: 0 };
                   mat.color.getHSL(hsl);
-                  mat.color.setHSL(hsl.h, hsl.s * 0.78, hsl.l * 0.94);
+                  mat.color.setHSL(hsl.h, hsl.s * 0.62, hsl.l * 0.89);
                 }
                 mat.metalness = 0.05;
                 mat.roughness = 0.34;

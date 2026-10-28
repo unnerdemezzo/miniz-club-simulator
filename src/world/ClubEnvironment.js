@@ -882,7 +882,7 @@ export class ClubEnvironment {
                   mat.color.set(tintHex);
                   const hsl = { h: 0, s: 0, l: 0 };
                   mat.color.getHSL(hsl);
-                  mat.color.setHSL(hsl.h, hsl.s * 0.78, hsl.l * 0.94);
+                  mat.color.setHSL(hsl.h, hsl.s * 0.62, hsl.l * 0.89);
                 }
                 mat.metalness = 0.06;
                 mat.roughness = 0.34;
@@ -1168,9 +1168,9 @@ export class ClubEnvironment {
     const colors = [];
     const indices = [];
 
-    // Vere sponde perimetrali Kyosho RCP in gomma espansa EVA grigio-antracite scuro opaco (con piccoli inserti bianchi/rossi smorzati solo agli apici curva)
-    const cRed = new THREE.Color(0x992329);
-    const cWhite = new THREE.Color(0xcbd2dc);
+    // Vere sponde perimetrali Kyosho RCP in gomma espansa EVA grigio-antracite scuro opaco (con inserti bianchi/rossi desaturati agli apici curva)
+    const cRed = new THREE.Color(0x7c2a2e);
+    const cWhite = new THREE.Color(0xbec4cd);
     const cDark = new THREE.Color(0x232730);
     const cDarkAlt = new THREE.Color(0x2a2f39);
 
@@ -1384,14 +1384,14 @@ export class ClubEnvironment {
     sceneryGroup.name = 'Adesivi Sponsor Piatti Mini-Z 1:27';
 
     const stickerSpecs = [
-      { badge: 'KZ', title: 'KYOSHO', sub: 'OFFICIAL MINI-Z CUP 1:27', bg: '#181c24', accent: '#b91c1c', stripe: '#f8fafc', fg: '#f8fafc' },
-      { badge: 'PN', title: 'PN RACING', sub: 'WORLD CHAMPION TUNING', bg: '#152238', accent: '#d97706', stripe: '#f8fafc', fg: '#ffffff' },
-      { badge: 'SH', title: 'SPEED HOUSE', sub: 'X-SPEED 8500KV & AAA Ni-MH', bg: '#171920', accent: '#0284c7', stripe: '#eab308', fg: '#f8fafc' },
-      { badge: 'MK', title: 'MARKA', sub: 'PRO RADIAL SLICK TIRES', bg: '#1c1917', accent: '#c2410c', stripe: '#f8fafc', fg: '#ffffff' },
-      { badge: 'GL', title: 'GL RACING', sub: 'CARBON CHASSIS SERIES', bg: '#172554', accent: '#2563eb', stripe: '#93c5fd', fg: '#ffffff' },
-      { badge: 'KO', title: 'KO PROPO', sub: 'EX-NEXT 2.4GHz TELEMETRY', bg: '#18181b', accent: '#991b1b', stripe: '#d4d4d8', fg: '#ffffff' },
-      { badge: 'AT', title: 'ATOMIC RC', sub: 'PRECISION METAL UPGRADES', bg: '#14261c', accent: '#15803d', stripe: '#86efac', fg: '#f8fafc' },
-      { badge: 'RCP', title: 'RCP TRACK', sub: 'HIGH-GRIP EVA FOAM SYSTEM', bg: '#1e242d', accent: '#b91c1c', stripe: '#e2e8f0', fg: '#f8fafc' }
+      { badge: 'KZ', title: 'KYOSHO', sub: 'OFFICIAL MINI-Z CUP 1:27', bg: '#1a1e26', accent: '#8c2828', stripe: '#d8dee8', fg: '#e2e8f0' },
+      { badge: 'PN', title: 'PN RACING', sub: 'WORLD CHAMPION TUNING', bg: '#182232', accent: '#9c621c', stripe: '#d8dee8', fg: '#e2e8f0' },
+      { badge: 'SH', title: 'SPEED HOUSE', sub: 'X-SPEED 8500KV & AAA Ni-MH', bg: '#191c22', accent: '#1e6082', stripe: '#b89628', fg: '#e2e8f0' },
+      { badge: 'MK', title: 'MARKA', sub: 'PRO RADIAL SLICK TIRES', bg: '#1e1b1a', accent: '#8f3f1e', stripe: '#d8dee8', fg: '#e2e8f0' },
+      { badge: 'GL', title: 'GL RACING', sub: 'CARBON CHASSIS SERIES', bg: '#192342', accent: '#284c8f', stripe: '#8ea8cc', fg: '#e2e8f0' },
+      { badge: 'KO', title: 'KO PROPO', sub: 'EX-NEXT 2.4GHz TELEMETRY', bg: '#1a1a1e', accent: '#7a2424', stripe: '#c4c8d0', fg: '#e2e8f0' },
+      { badge: 'AT', title: 'ATOMIC RC', sub: 'PRECISION METAL UPGRADES', bg: '#17241d', accent: '#226338', stripe: '#7ab08e', fg: '#e2e8f0' },
+      { badge: 'RCP', title: 'RCP TRACK', sub: 'HIGH-GRIP EVA FOAM SYSTEM', bg: '#1e242d', accent: '#8c2828', stripe: '#cbd5e1', fg: '#e2e8f0' }
     ];
 
     // Posizioni candidate sul piano del tavolo (sceglie automaticamente quelle libere fuori dalle corsie di ciascuna pista)

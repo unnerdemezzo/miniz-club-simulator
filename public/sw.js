@@ -1,4 +1,4 @@
-const CACHE_NAME = 'miniz-club-sim-v1.4.3';
+const CACHE_NAME = 'miniz-club-sim-v1.4.4';
 const CORE_ASSETS = [
   '/',
   '/index.html',
