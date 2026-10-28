@@ -74,7 +74,7 @@ export class MiniZCar {
 
     this.onWorkbench = false;
     // Posizione sul supporto del banco lavoro (aggiornata dalla sala con le coordinate reali del banco)
-    this.workbenchPose = { x: -5.05, y: 0.112, z: -2.72, heading: 0, shellY: 0.079 };
+    this.workbenchPose = { x: -5.05, y: 0.1052, z: -2.77, heading: 0, shellY: 0.0822 };
     this.currentSetup = null;
     // Il piano del tappeto RCP coincide con il piano pista della sala (TRACK_Y) + spessore mattonelle (8 mm)
     this.trackSurfaceY = TRACK_Y;
@@ -508,12 +508,12 @@ export class MiniZCar {
     if (this.currentSetup) this.currentSetup.showNakedChassis = showNaked;
     const hasGlbWheels = this.glbWheelNodes.lf.length > 0;
     if (showNaked) {
-      // Sul Banco Lavoro: appoggia la carrozzeria 3D (senza ruote) sul tappetino verde davanti al telaio nudo, tutta ben visibile a sinistra!
+      // Sul Banco Lavoro: appoggia la carrozzeria 3D (senza ruote) sul tappetino davanti al telaio nudo, ben visibile e senza essere coperta dal menu a destra!
       if (this.onWorkbench) {
         const pose = this.workbenchPose;
         this.bodyGroup.visible = true;
-        this.bodyGroup.position.set(0.088, (pose.shellY ?? pose.y) - pose.y - 0.002, 0.035);
-        this.bodyGroup.rotation.set(0, -0.22, 0);
+        this.bodyGroup.position.set(0.078, (pose.shellY ?? pose.y) - pose.y, 0.048);
+        this.bodyGroup.rotation.set(0, -0.14, 0);
         this.setGlbWheelsVisible(false);
       } else {
         this.bodyGroup.visible = false;

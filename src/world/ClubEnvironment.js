@@ -427,12 +427,14 @@ export class ClubEnvironment {
         worker: bz === -5.4 ? { x: 0.8, z: 0.45, rotation: Math.PI / 2, stool: false } : null
       });
       if (isPlayerBench) {
+        // Il fondo della vasca MR-04 è a +0.0034m nel sistema dell'auto; con y = +0.0282m il fondo poggia esattamente sulla gomma antiscivolo del cavalletto (y = 0.0316m)
+        // lasciando le 4 ruote sollevate di 9 mm nell'aria!
         this.playerWorkbenchPose = {
           x: bx,
-          y: FLOOR + 0.927 + 0.035,
+          y: FLOOR + 0.927 + 0.0282,
           z: bz - 0.17,
           heading: 0,
-          shellY: FLOOR + 0.927 + 0.008
+          shellY: FLOOR + 0.927 + 0.0052
         };
       }
       cyl(0.17, 0.17, 0.05, new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.6 }), bx + 0.8, FLOOR + (bz === -5.4 ? 0.61 : 0.66), bz + 0.3, { seg: 28 });

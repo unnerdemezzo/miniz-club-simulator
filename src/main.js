@@ -439,12 +439,12 @@ class MiniZSimulatorApp {
         this.camera.position.set(1.8, 1.55, 2.7);
         this.orbit.target.set(2.45, -0.15, -1.8);
       } else if (mode === 'workbench') {
-        const bp = this.car?.workbenchPose || { x: -5.05, y: 0.112, z: -2.77 };
+        const bp = this.car?.workbenchPose || { x: -5.05, y: 0.1052, z: -2.77 };
         this.orbit.minDistance = 0.14;
-        this.orbit.maxDistance = 0.85;
-        // Inquadra da vicino il banco lavoro illuminato così il telaio MR-04 sul cavalletto e la carrozzeria smontata sono entrambi centrati a sinistra!
-        this.camera.position.set(bp.x + 0.31, bp.y + 0.19, bp.z + 0.22);
-        this.orbit.target.set(bp.x + 0.04, bp.y + 0.012, bp.z - 0.02);
+        this.orbit.maxDistance = 0.90;
+        // Inquadra il banco lavoro illuminato mostrando il telaio MR-04 appoggiato sul cavalletto anodizzato, le ruote di ricambio, il caricabatterie 4xAAA, i cacciaviti Hudy/MIP e il vassoio magnetico!
+        this.camera.position.set(bp.x + 0.36, bp.y + 0.21, bp.z + 0.26);
+        this.orbit.target.set(bp.x + 0.02, bp.y + 0.005, bp.z + 0.01);
         this.orbit.update();
       }
     }
