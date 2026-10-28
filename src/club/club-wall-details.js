@@ -71,8 +71,8 @@ function woodPrints(){
   // A narrow museum label, a workshop pegboard, and the actual four-lane
   // course diagram share one atlas rather than three additional materials.
   g.fillStyle='#ece5d7';g.fillRect(0,0,w,128);
-  g.fillStyle='#5d4934';g.font='700 37px Arial';g.fillText('PISTA FRESATA',36,50);
-  g.font='27px Arial';g.fillText('LEGNO · SLOT · TRECCIA IN RAME',36,96);
+  g.fillStyle='#5d4934';g.font='700 37px Arial';g.fillText('PISTA KYOSHO RCP',36,50);
+  g.font='27px Arial';g.fillText('GOMMA EVA · SCALA 1:27 · CRONOMETRO IC-TAG',36,96);
   g.fillStyle='#c9cdd0';g.fillRect(0,128,w,384);
   g.fillStyle='#555f65';
   for(let y=233;y<500;y+=22)for(let x=25;x<w;x+=25){g.beginPath();g.arc(x,y,2.6,0,Math.PI*2);g.fill();}

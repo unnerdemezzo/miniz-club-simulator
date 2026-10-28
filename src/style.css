@@ -27,135 +27,225 @@ body, html {
   display: none !important;
 }
 
-/* ================= SCHERMATA DI CARICAMENTO ================= */
+/* ================= SCHERMATA DI AVVIO TELEMETRICA PROFESSIONALE ================= */
 .loading-overlay {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: radial-gradient(circle at center, #111827 0%, #050811 100%);
+  background: radial-gradient(circle at 50% 25%, #161d2b 0%, #090c14 65%, #05070c 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
   transition: opacity 0.45s ease;
+  font-family: 'Titillium Web', 'Segoe UI', system-ui, sans-serif;
+}
+
+.loading-backdrop-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+  background-size: 36px 36px;
+  pointer-events: none;
 }
 
 .loading-card {
-  width: min(740px, 96vw);
-  background: rgba(15, 23, 42, 0.92);
-  border: 2px solid rgba(225, 29, 72, 0.65);
-  border-radius: 20px;
-  padding: 28px 32px;
-  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.85), 0 0 40px rgba(225, 29, 72, 0.25);
+  position: relative;
+  width: min(820px, 96vw);
+  background: linear-gradient(165deg, rgba(18, 24, 36, 0.96) 0%, rgba(10, 14, 22, 0.98) 100%);
+  border: 1px solid rgba(203, 213, 225, 0.18);
+  border-top: 3px solid #c81e2b;
+  border-radius: 16px;
+  padding: 28px 34px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.85);
 }
 
 .loading-top-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.loading-brand-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #c81e2b;
+  box-shadow: 0 0 10px #c81e2b;
 }
 
 .loading-tag {
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 1.4px;
-  color: #f43f5e;
+  letter-spacing: 1.5px;
+  color: #e2e8f0;
   text-transform: uppercase;
 }
 
 .version-pill {
-  background: #1e293b;
-  border: 1px solid #38bdf8;
-  color: #38bdf8;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #f8fafc;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 12px;
   padding: 4px 12px;
-  border-radius: 999px;
+  border-radius: 6px;
+  letter-spacing: 0.6px;
 }
 
 .loading-hero {
   display: flex;
   align-items: center;
   gap: 24px;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
+}
+
+.loading-icon-frame {
+  position: relative;
+  flex-shrink: 0;
 }
 
 .loading-icon-img {
-  width: 118px;
-  height: 118px;
-  border-radius: 22px;
+  width: 112px;
+  height: 112px;
+  border-radius: 16px;
   object-fit: cover;
-  border: 2px solid #f43f5e;
-  box-shadow: 0 10px 28px rgba(225, 29, 72, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.65);
+}
+
+.loading-scale-chip {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  background: #c81e2b;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.5px;
+}
+
+.loading-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  color: #f59e0b;
+  margin-bottom: 4px;
 }
 
 .loading-title-wrap h1 {
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 900;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.8px;
   color: #ffffff;
   margin-bottom: 6px;
+  line-height: 1.08;
 }
 
 .loading-subtitle {
   color: #94a3b8;
-  font-size: 14px;
-  margin-bottom: 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
 }
 
-.scale-badges {
+.loading-specs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.spec-tile {
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  padding: 10px 12px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.scale-badges span {
-  background: rgba(30, 41, 59, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  padding: 5px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #e2e8f0;
+.spec-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  color: #64748b;
+}
+
+.spec-val {
+  font-size: 13.5px;
+  font-weight: 900;
+  color: #f1f5f9;
+}
+
+.spec-sub {
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .loading-progress-section {
-  margin-bottom: 18px;
+  margin-bottom: 16px;
+  background: rgba(9, 13, 22, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 12px 14px;
+  border-radius: 10px;
 }
 
 .loading-status-row {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  align-items: center;
+  font-size: 12.5px;
   font-weight: 700;
   color: #cbd5e1;
   margin-bottom: 8px;
 }
 
+#loading-percent {
+  font-family: Consolas, monospace;
+  font-size: 14px;
+  font-weight: 900;
+  color: #f59e0b;
+}
+
 .loading-bar-bg {
   width: 100%;
-  height: 14px;
-  background: #090d16;
+  height: 10px;
+  background: #060911;
   border-radius: 999px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .loading-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #e11d48 0%, #f59e0b 50%, #22c55e 100%);
+  background: linear-gradient(90deg, #c81e2b 0%, #e11d48 55%, #f59e0b 100%);
   border-radius: 999px;
   transition: width 0.2s ease;
 }
 
 .loading-tips {
-  background: rgba(2, 132, 199, 0.14);
-  border-left: 4px solid #38bdf8;
+  background: rgba(30, 41, 59, 0.55);
+  border-left: 3px solid #f59e0b;
   padding: 10px 14px;
   border-radius: 8px;
-  font-size: 13px;
-  color: #e2e8f0;
+  font-size: 12.5px;
+  color: #cbd5e1;
+  line-height: 1.4;
 }
 
 /* ================= BARRA SUPERIORE & RIQUADRINI STATO ================= */
@@ -522,7 +612,69 @@ body, html {
 .speed-scale-sub {
   font-size: 11.5px;
   color: #38bdf8;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+}
+
+.sim-vitals-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.vital-box {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  padding: 5px 7px;
+}
+
+.vital-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.vital-top strong {
+  color: #f8fafc;
+  font-family: Consolas, monospace;
+  font-size: 10px;
+}
+
+.batt-fill {
+  background: linear-gradient(90deg, #16a34a, #38bdf8);
+}
+
+.tire-fill {
+  background: linear-gradient(90deg, #f59e0b, #22c55e);
+}
+
+.bench-shortcut-btn {
+  border-color: rgba(56, 189, 248, 0.55) !important;
+  color: #7dd3fc !important;
+}
+
+.ai-difficulty-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.ai-difficulty-selector select {
+  background: #090d16;
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 700;
 }
 
 .live-bars {
@@ -685,6 +837,29 @@ body, html {
   align-items: center;
   justify-content: center;
   padding: 16px;
+}
+
+/* Quando è aperta la scheda "Banco Box", il pannello si ancora a destra e lascia libera la vista 3D sul banco a sinistra! */
+.menu-modal.workbench-docked {
+  background: transparent;
+  backdrop-filter: none;
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 64px 14px 14px 14px;
+  pointer-events: none;
+}
+
+.menu-modal.workbench-docked .menu-window {
+  width: min(540px, 46vw);
+  max-height: calc(100vh - 78px);
+  background: rgba(11, 16, 28, 0.92);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+  box-shadow: -15px 0 45px rgba(0, 0, 0, 0.75);
+}
+
+.menu-modal.workbench-docked .setup-grid {
+  grid-template-columns: 1fr 1fr;
 }
 
 .menu-window {

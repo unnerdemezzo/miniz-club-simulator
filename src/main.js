@@ -91,8 +91,8 @@ class MiniZSimulatorApp {
       powerPreference: 'high-performance'
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.02;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -160,6 +160,7 @@ class MiniZSimulatorApp {
     try {
       setProgress(15, 'Allestimento sala del Club Mini-Z, pedana piloti, officina 3 banchi e direzione gara...');
       this.club = new ClubEnvironment(this.scene, this.renderer);
+      this.club.setAiDifficulty(this.profileManager.state.aiLevel || 'club');
 
       setProgress(35, 'Montaggio tappeto in gomma Kyosho RCP Track (mattonelle 50×50cm)...');
       this.loadActiveTrack(false);
@@ -169,6 +170,9 @@ class MiniZSimulatorApp {
         const totalPct = Math.min(98, 45 + Math.round(glbPct * 0.52));
         setProgress(totalPct, `Calibrazione carrozzeria 3D in scala 1:27 (${glbPct}%)...`);
       });
+      if (this.club.playerWorkbenchPose) {
+        this.car.workbenchPose = { ...this.club.playerWorkbenchPose };
+      }
 
       const activeProfile = this.profileManager.getActiveProfile(this.bodyNamesMap, this.trackNamesMap);
       await this.car.applySetup(activeProfile.carSetup);
@@ -271,14 +275,29 @@ class MiniZSimulatorApp {
     const openMenu = (tabId = null) => {
       this.refreshMenuUI();
       menuModal.classList.remove('hidden');
-      if (tabId) this.switchMenuTab(tabId);
+      const targetTab = tabId || document.querySelector('.menu-tab-btn.active')?.dataset.tab || 'tab-track';
+      this.switchMenuTab(targetTab);
     };
     const closeMenu = () => {
       this.controller.cancelListening();
       menuModal.classList.add('hidden');
+      menuModal.classList.remove('workbench-docked');
+      if (this.car?.onWorkbench) {
+        // Quando si torna in pista, rimette sempre la carrozzeria montata sull'auto!
+        const prof = this.profileManager.getActiveProfile(this.bodyNamesMap, this.trackNamesMap);
+        if (prof.carSetup.showNakedChassis) {
+          this.profileManager.updateActiveCarSetup({ showNakedChassis: false }, this.bodyNamesMap, this.trackNamesMap);
+          this.car.setNakedChassisMode(false);
+        }
+        this.car.setWorkbenchMode(false);
+        if (this.driveCameraMode === 'workbench') {
+          this.setDriveCameraMode(this.previousDriveCameraMode || 'stand_normal');
+        }
+      }
     };
 
     document.getElementById('btn-open-menu')?.addEventListener('click', () => openMenu());
+    document.getElementById('btn-open-workbench-quick')?.addEventListener('click', () => openMenu('tab-workbench'));
     document.getElementById('btn-close-menu')?.addEventListener('click', closeMenu);
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') {
@@ -309,8 +328,15 @@ class MiniZSimulatorApp {
 
     document.getElementById('btn-restart-race')?.addEventListener('click', () => this.restartRace());
     document.getElementById('btn-marshal-reset')?.addEventListener('click', () => this.triggerMarshalReset());
-    document.getElementById('btn-toggle-shell-quick')?.addEventListener('click', () => this.toggleNakedChassis());
     document.getElementById('btn-Toggle-naked-chassis')?.addEventListener('click', () => this.toggleNakedChassis());
+    document.getElementById('btn-refill-batteries')?.addEventListener('click', () => {
+      this.car?.refillBatteries();
+      this.sound.speak('Quattro batterie ministilo AAA Ni-MH Speed House caricate al massimo: 5 virgola 60 Volt!', 'high');
+    });
+    document.getElementById('btn-replace-tires')?.addEventListener('click', () => {
+      this.car?.replaceTires();
+      this.sound.speak('Treno di gomme nuove Kyosho montato sul telaio: battistrada al cento per cento!', 'high');
+    });
 
     document.getElementById('sel-gamepad-device')?.addEventListener('change', (e) => {
       this.controller.preferredDevice = e.target.value;
@@ -318,7 +344,18 @@ class MiniZSimulatorApp {
       this.refreshGamepadDeviceSelect();
     });
 
-    // Scheda 1: Piste RCP e inversione direzione
+    // Scheda 1: Piste RCP, livello avversari IA e inversione direzione
+    const aiSel = document.getElementById('sel-ai-difficulty');
+    if (aiSel) {
+      aiSel.value = this.profileManager.state.aiLevel || 'club';
+      aiSel.addEventListener('change', (e) => {
+        const lvl = e.target.value;
+        this.profileManager.state.aiLevel = lvl;
+        this.profileManager.save();
+        this.club?.setAiDifficulty(lvl);
+      });
+    }
+
     document.getElementById('chk-reverse-track')?.addEventListener('change', (e) => {
       this.profileManager.state.reverseTrack = e.target.checked;
       this.profileManager.save();
@@ -371,15 +408,44 @@ class MiniZSimulatorApp {
     document.querySelectorAll('.tab-pane').forEach((p) => {
       p.classList.toggle('active', p.id === tabId);
     });
+
+    const menuModal = document.getElementById('main-menu-modal');
+    const isWorkbench = tabId === 'tab-workbench';
+    if (menuModal) {
+      menuModal.classList.toggle('workbench-docked', isWorkbench);
+    }
+
+    if (this.car) {
+      if (isWorkbench) {
+        if (this.driveCameraMode !== 'workbench') {
+          this.previousDriveCameraMode = this.driveCameraMode;
+        }
+        this.car.setWorkbenchMode(true, this.club?.playerWorkbenchPose || null);
+        this.setDriveCameraMode('workbench');
+      } else if (this.car.onWorkbench) {
+        this.car.setWorkbenchMode(false);
+        this.setDriveCameraMode(this.previousDriveCameraMode || 'stand_normal');
+      }
+    }
   }
 
   setDriveCameraMode(mode) {
     this.driveCameraMode = mode;
     if (this.orbit) {
-      this.orbit.enabled = mode === 'pit_bench';
+      this.orbit.enabled = mode === 'pit_bench' || mode === 'workbench';
       if (mode === 'pit_bench') {
+        this.orbit.minDistance = 0.25;
+        this.orbit.maxDistance = 12;
         this.camera.position.set(1.8, 1.55, 2.7);
-        this.orbit.target.set(2.45, -0.05, -1.8);
+        this.orbit.target.set(2.45, -0.15, -1.8);
+      } else if (mode === 'workbench') {
+        const bp = this.car?.workbenchPose || { x: -5.05, y: 0.112, z: -2.77 };
+        this.orbit.minDistance = 0.14;
+        this.orbit.maxDistance = 0.85;
+        // Inquadra da vicino il banco lavoro illuminato così il telaio MR-04 sul cavalletto e la carrozzeria smontata sono entrambi centrati a sinistra!
+        this.camera.position.set(bp.x + 0.31, bp.y + 0.19, bp.z + 0.22);
+        this.orbit.target.set(bp.x + 0.04, bp.y + 0.012, bp.z - 0.02);
+        this.orbit.update();
       }
     }
     document.querySelectorAll('.cam-pill').forEach((p) => {
@@ -439,14 +505,18 @@ class MiniZSimulatorApp {
     this.profileManager.updateActiveCarSetup({ showNakedChassis: nextVal }, this.bodyNamesMap, this.trackNamesMap);
     this.car.setNakedChassisMode(nextVal);
 
-    const txt = nextVal ? '🔍 Rimetti Carrozzeria' : '🔍 Togli Carrozzeria';
-    const b1 = document.getElementById('btn-toggle-shell-quick');
     const b2 = document.getElementById('btn-Toggle-naked-chassis');
-    if (b1) b1.textContent = txt;
-    if (b2) b2.textContent = nextVal ? '🏎️ Rimetti Carrozzeria sopra il Telaio' : '🔍 Togli Carrozzeria (Vedi Telaio Nudo)';
+    if (b2) {
+      b2.textContent = nextVal
+        ? '🏎️ Rimonta Carrozzeria sopra il Telaio MR-04'
+        : '🔍 Smonta Carrozzeria sul Banco (Vedi Telaio MR-04)';
+    }
 
     if (nextVal) {
-      this.sound.speak('Carrozzeria smontata sul banco! Visibile il telaio Kyosho con batterie ministilo, molle e motore.', 'normal');
+      this.sound.speak(
+        'Carrozzeria smontata e appoggiata sul tappetino del banco! Ora vedi il telaio Kyosho MR-04 con le quattro batterie ministilo, la scheda elettronica, le molle anteriori e il motore.',
+        'normal'
+      );
     }
   }
 
@@ -863,10 +933,10 @@ class MiniZSimulatorApp {
   updateDriverCamera(dt) {
     const carPos = new THREE.Vector3(this.car.state.x, this.car.state.y + 0.025, this.car.state.z);
 
-    if (this.driveCameraMode === 'pit_bench') {
-      // Visuale libera Orbit nella sala (come "Ruota" in Slot-Car)
+    if (this.driveCameraMode === 'pit_bench' || this.driveCameraMode === 'workbench') {
+      // Visuale libera Orbit nella sala o sul Banco Lavoro illuminato
       if (this.orbit) {
-        this.camera.fov = 50;
+        this.camera.fov = this.driveCameraMode === 'workbench' ? 38 : 50;
         this.camera.updateProjectionMatrix();
         this.orbit.update();
       }
@@ -967,54 +1037,58 @@ class MiniZSimulatorApp {
       return;
     }
 
-    // 4. Avanzamento Fisica Mini-Z (2 sotto-passi per massima precisione)
+    // 4. Avanzamento Fisica Mini-Z (2 sotto-passi per massima precisione, sospeso mentre l'auto è sul Banco Lavoro!)
     const subSteps = 2;
     const subDt = dt / subSteps;
-    for (let s = 0; s < subSteps; s++) {
-      this.car.updatePhysics(
-        subDt,
-        input,
-        this.trackData,
-        (hitSpeed) => {
-          if (hitSpeed > 0.7) {
-            this.sound.playBarrierHit(hitSpeed * 0.35);
-            if (hitSpeed > 1.85) this.sound.commentWallHit(true);
+    if (!this.car.onWorkbench) {
+      for (let s = 0; s < subSteps; s++) {
+        this.car.updatePhysics(
+          subDt,
+          input,
+          this.trackData,
+          (hitSpeed) => {
+            if (hitSpeed > 0.7) {
+              this.sound.playBarrierHit(hitSpeed * 0.35);
+              if (hitSpeed > 1.85) this.sound.commentWallHit(true);
+            }
+          },
+          () => {
+            this.sound.commentFlipMarshal();
           }
-        },
-        () => {
-          this.sound.commentFlipMarshal();
-        }
-      );
+        );
 
-      // Controllo passaggio sotto il Ponte di Cronometraggio IC-Tag
-      const crossEvent = this.trackData.checkLapCrossing(this.car.state.x, this.car.state.z);
-      if (crossEvent === 'timer_started') {
-        this.timerRunning = true;
-        this.lapStartTime = now;
-        this.lapNumber = 1;
-        this.sound.playLapBeep(false);
-        this.sound.speak('Cronometro avviato! Primo giro lanciato!', 'normal');
-      } else if (crossEvent === 'lap_completed' && this.timerRunning) {
-        const lapSec = (now - this.lapStartTime) / 1000;
-        if (lapSec >= 2.8) {
-          this.lastLapSec = lapSec;
-          const prevBest = this.bestLapSec;
-          const isRecord = this.profileManager.recordLapTime(
-            this.profileManager.state.currentTrackId,
-            lapSec,
-            this.profileManager.state.currentBodyId
-          );
-          if (isRecord) this.bestLapSec = lapSec;
-
-          const delta = prevBest ? lapSec - prevBest : null;
-          this.sound.playLapBeep(isRecord);
-          this.sound.commentLap(this.lapNumber, lapSec, isRecord, delta);
-
-          this.lapNumber++;
+        // Controllo passaggio sotto il Ponte di Cronometraggio IC-Tag
+        const crossEvent = this.trackData.checkLapCrossing(this.car.state.x, this.car.state.z);
+        if (crossEvent === 'timer_started') {
+          this.timerRunning = true;
           this.lapStartTime = now;
-          this.club.updateBridgeDisplay(this.lapNumber, this.lastLapSec, this.bestLapSec);
+          this.lapNumber = 1;
+          this.sound.playLapBeep(false);
+          this.sound.speak('Cronometro avviato! Primo giro lanciato!', 'normal');
+        } else if (crossEvent === 'lap_completed' && this.timerRunning) {
+          const lapSec = (now - this.lapStartTime) / 1000;
+          if (lapSec >= 2.8) {
+            this.lastLapSec = lapSec;
+            const prevBest = this.bestLapSec;
+            const isRecord = this.profileManager.recordLapTime(
+              this.profileManager.state.currentTrackId,
+              lapSec,
+              this.profileManager.state.currentBodyId
+            );
+            if (isRecord) this.bestLapSec = lapSec;
+
+            const delta = prevBest ? lapSec - prevBest : null;
+            this.sound.playLapBeep(isRecord);
+            this.sound.commentLap(this.lapNumber, lapSec, isRecord, delta);
+
+            this.lapNumber++;
+            this.lapStartTime = now;
+            this.club.updateBridgeDisplay(this.lapNumber, this.lastLapSec, this.bestLapSec);
+          }
         }
       }
+    } else {
+      this.car.syncVisuals();
     }
 
     if (this.timerRunning) {
@@ -1046,6 +1120,22 @@ class MiniZSimulatorApp {
     const scaleEl = document.getElementById('hud-speed-scale');
     if (realEl) realEl.textContent = realKmh.toFixed(1);
     if (scaleEl) scaleEl.textContent = `${scaleKmh}`;
+
+    // Aggiorna indicatori Batteria 4xAAA Ni-MH (percentuale e tensione sotto carico) e Gomme (usura e temperatura °C)
+    const battPct = Math.round(this.car.state.batteryPct ?? 100);
+    const battV = (this.car.state.batteryVoltage ?? 5.58).toFixed(2);
+    const tirePct = Math.round(this.car.state.tireWearPct ?? 100);
+    const tireTemp = Math.round(this.car.state.tireTempC ?? 23);
+
+    const battTxtEl = document.getElementById('hud-batt-text');
+    const battBarEl = document.getElementById('hud-batt-bar');
+    const tireTxtEl = document.getElementById('hud-tire-text');
+    const tireBarEl = document.getElementById('hud-tire-bar');
+
+    if (battTxtEl) battTxtEl.textContent = `${battPct}% • ${battV}V`;
+    if (battBarEl) battBarEl.style.width = `${battPct}%`;
+    if (tireTxtEl) tireTxtEl.textContent = `${tirePct}% • ${tireTemp}°C`;
+    if (tireBarEl) tireBarEl.style.width = `${tirePct}%`;
 
     // 6. Registra frame per il Replay Multicamera
     this.replay.recordFrame(this.car.state, this.currentLapSec);

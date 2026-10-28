@@ -20,3 +20,5 @@ export const FLOOR = -0.85;                                                     
 export const BOARD = { x0: -2.8, x1: 7.7, z0: -5.0, z1: 1.15 };                 // tavolo della pista (10.5 x 6.15 m)
 export const ROOM  = { x0: -5.6, x1: 10.6, z0: -8.2, z1: 4.6, h: 3.3 };         // sala del club (16.2 x 12.8 m, soffitto 3.3 m)
 export const ROST  = { x0: 0.3, x1: 6.4, z0: 1.55, z1: 2.35, top: -0.40 };      // pedana piloti rialzata di 45 cm
+
+export const TRACK_Y = -0.22; // piano pista abbassato di 22 cm: tavolo a 63 cm dal pavimento, ben sotto lo sguardo dei piloti

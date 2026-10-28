@@ -42,11 +42,16 @@ function label(root,text,w,h,x,y,z,angle=0){
  const map=canvasTex(256,64,(g,W,H)=>{g.fillStyle='#18212b';g.fillRect(0,0,W,H);g.fillStyle='#f5d543';g.font='bold 28px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText(text,W/2,H/2,W-12);},{clamp:true});
  const o=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshStandardMaterial({map,roughness:.8}));o.position.set(x,y,z);o.rotation.y=angle;o.name=text;root.add(o);return o;
 }
-export function buildBenchEquipment(scene,M,{x,y,z,room,car=true,rotation=0,supplement=false,worker=null}){
+export function buildBenchEquipment(scene,M,{x,y,z,room,car=true,stand=false,rotation=0,supplement=false,worker=null}){
  const root=new T.Group();root.name=`Attrezzatura banco ${room}`;root.position.set(x,y,z);scene.add(root);
  const {part,box,cylinder,rod}=primitives(root),blue=paint(0x275b80),red=paint(0xb52d26),brass=paint(0xc79743),metal=M.metal||M.railProps;
  // Car, small cradle, detached spare wheels and a divided screw tray.
  box(.19,.008,.28,M.blackPlastic||M.molded,-.02,.004,0,'Supporto slot car in manutenzione');
+ if(stand){
+  // Cavalletto rialzato in alluminio anodizzato per il telaio Kyosho Mini-Z (lascia le ruote sollevate di ~1,2 cm dal tappetino!)
+  box(.052,.019,.088,blue,0,.0175,-.02,'Cavalletto setup Mini-Z');
+  box(.048,.002,.084,M.rubber||M.blackPlastic,0,.028,-.02,'Gomma antiscivolo cavalletto');
+ }
  const excluded=[];
  if(car){const model=makeCar({...DRIVERS[1],base:'#256ca3',num:12});model.root.name='Slot car sul banco';model.root.position.set(-.02,.008,0);model.root.rotation.y=Math.PI/2;root.add(model.root);model.root.traverse(o=>{if(o.isMesh)excluded.push(o);});}
  box(.12,.014,.09,metal,.19,.009,.32,'Vaschetta viti');
@@ -120,7 +125,7 @@ export function buildClubAmenities(scene,M,room){
  label(root,`${room.toUpperCase()} · RICAMBI`,1.17,.08,0,1.30,.249);
  box(.39,.09,.28,blue,-.28,1.44,0,'Valigetta pulsanti');box(.17,.035,.016,M.darkMetal,-.28,1.502,0,'Maniglia valigetta');
  box(.30,.10,.25,red,.27,1.445,0,'Kit riparazione');
- label(root,'SETUP / GARE',.6,.17,0,1.9,-.132);
+
  // Extinguisher with gauge, bracket, hose and clear safety label.
  cylinder(.07,.38,red,-1.02,.40,0,'Estintore');cylinder(.026,.055,metal,-1.02,.62,0,'Valvola estintore');
  box(.11,.025,.035,M.darkMetal,-1.02,.665,0,'Leva estintore');part(new T.SphereGeometry(.02,8,6),M.white,-1.02,.64,.04,'Manometro estintore');

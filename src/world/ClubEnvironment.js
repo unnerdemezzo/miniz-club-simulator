@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { TRACK_LAYOUTS } from '../data/tracks.js';
-import { BOARD, DRIVERS, FLOOR, LANES, ROOM, ROST } from '../club/config.js';
+import { BOARD, DRIVERS, FLOOR, LANES, ROOM, ROST, TRACK_Y } from '../club/config.js';
 import { canvasTex, clamp, normalFromHeight, rng, speckle } from '../club/util.js';
 import { makeMaterials } from '../club/materials.js';
 import { clubWallMaterial, ROOM_WALL_COLORS } from '../club/room-wall.js';
@@ -34,6 +34,10 @@ export class ClubEnvironment {
     this.trackGroup.name = 'Tracciato Kyosho RCP';
     this.aiCarsGroup = new THREE.Group();
     this.aiCarsGroup.name = 'Avversari AI Mini-Z';
+    // Tutto il piano pista (tavolo, tracciato, scenografia, avversari) è abbassato di TRACK_Y
+    this.trackGroup.position.y = TRACK_Y;
+    this.aiCarsGroup.position.y = TRACK_Y;
+    this.aiLevel = 'club';
 
     this.scene.add(this.clubGroup);
     this.scene.add(this.trackGroup);
@@ -91,7 +95,8 @@ export class ClubEnvironment {
     const box = new THREE.Mesh(new THREE.BoxGeometry(16, 4, 13), wallM);
     box.position.set(2.5, 1.2, -1.8);
     envScene.add(box);
-    const floorM = new THREE.MeshBasicMaterial({ color: 0x1d4d2b });
+    // Moquette agugliata grigio-ardesia neutra del piano tavolo (colore naturale e riposante, zero verde saturo)
+    const floorM = new THREE.MeshBasicMaterial({ color: 0x363b42 });
     const fl = new THREE.Mesh(new THREE.PlaneGeometry(16, 13), floorM);
     fl.rotation.x = -Math.PI / 2;
     fl.position.set(2.5, -0.8, -1.8);
@@ -100,40 +105,30 @@ export class ClubEnvironment {
     pmrem.dispose();
   }
 
-  // Texture moquette verde tecnica da competizione RC per il piano d'appoggio sotto la pista
+  // Moquette agugliata tecnica grigio-ardesia scuro (needle-felt professionale da club indoor RC, zero effetto erba finta)
   createGreenCarpetTexture() {
-    return canvasTex(1024, 512, (g, w, h) => {
+    return canvasTex(512, 512, (g, w, h) => {
       const r = rng(77);
-      g.fillStyle = '#1f6b3b';
+      g.fillStyle = '#383d45';
       g.fillRect(0, 0, w, h);
 
-      // Trama moquette tecnica verde
-      for (let i = 0; i < 32000; i++) {
-        const shade = (r() * 26) | 0;
-        g.fillStyle = r() > 0.5 ? `rgba(${22 + shade},${98 + shade},${52 + shade},0.35)` : `rgba(14,68,35,0.28)`;
-        g.fillRect((r() * w) | 0, (r() * h) | 0, 3, 2);
+      // Fibre corte incrociate a bassissimo contrasto
+      for (let i = 0; i < 55000; i++) {
+        const v = (r() - 0.5) * 18;
+        g.fillStyle = `rgba(${56 + v},${61 + v},${69 + v},0.52)`;
+        const x = r() * w, y = r() * h, a = r() * Math.PI;
+        g.fillRect(x, y, 1 + Math.abs(Math.cos(a)) * 2, 1 + Math.abs(Math.sin(a)) * 2);
       }
-
-      // Righe sottili di taglio moquette ogni metro
-      g.strokeStyle = 'rgba(15, 52, 28, 0.35)';
-      g.lineWidth = 2;
-      for (let x = 0; x < w; x += 128) {
-        g.beginPath();
-        g.moveTo(x, 0);
-        g.lineTo(x, h);
-        g.stroke();
+      // Macchie di usura/polvere molto lievi
+      for (let i = 0; i < 36; i++) {
+        const x = r() * w, y = r() * h, rad = 20 + r() * 60;
+        const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+        gr.addColorStop(0, `rgba(${r() > 0.5 ? '255,255,255' : '0,0,0'},0.03)`);
+        gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gr;
+        g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
       }
-
-      // Cornice perimetrale bianca/rossa stile Paddock Mini-Z Cup sul tappeto verde
-      g.strokeStyle = 'rgba(255, 255, 255, 0.55)';
-      g.lineWidth = 6;
-      g.strokeRect(14, 14, w - 28, h - 28);
-
-      g.fillStyle = 'rgba(255, 255, 255, 0.16)';
-      g.font = 'italic 900 30px "Titillium Web", sans-serif';
-      g.fillText('KYOSHO MINI-Z CUP · OFFICIAL PADDOCK TURF', 38, h - 32);
-      g.fillText('SCALE 1:27 RC RACING ARENA', w - 430, 52);
-    }, { clamp: true });
+    }, { repeat: [BOARD.x1 - BOARD.x0, BOARD.z1 - BOARD.z0] });
   }
 
   // Texture grigio gomma EVA reale delle mattonelle Kyosho RCP Track (50x50cm con denti a puzzle)
@@ -209,28 +204,30 @@ export class ClubEnvironment {
     const RW = RX1 - RX0, RD = RZ1 - RZ0, RCX = (RX0 + RX1) / 2, RCZ = (RZ0 + RZ1) / 2;
     const BX = (BOARD.x0 + BOARD.x1) / 2, BZ = (BOARD.z0 + BOARD.z1) / 2, BW = BOARD.x1 - BOARD.x0, BD = BOARD.z1 - BOARD.z0;
 
-    // 1. PIANO D'APPOGGIO VERDE IN MOQUETTE TECNICA RC (visibile attorno a tutto il tracciato grigio Kyosho RCP!)
+    // 1. TAVOLO PISTA: piano in moquette agugliata grigio-verde (come nei club veri), abbassato di TRACK_Y
+    const T0 = TRACK_Y;
     const greenTopMat = new THREE.MeshStandardMaterial({
       map: this.greenCarpetTex,
-      roughness: 0.88,
-      metalness: 0.02
+      roughness: 0.97,
+      metalness: 0.0
     });
     const baseSideMat = new THREE.MeshStandardMaterial({
-      color: 0x181c24,
-      roughness: 0.55,
-      metalness: 0.25
+      color: 0x24272c,
+      roughness: 0.8,
+      metalness: 0.05
     });
-    // Pedana con faccia superiore VERDE (indice materiale 2 del BoxGeometry = +Y!)
+    // Pedana con faccia superiore in moquette (indice materiale 2 del BoxGeometry = +Y)
     const platformMats = [baseSideMat, baseSideMat, greenTopMat, baseSideMat, baseSideMat, baseSideMat];
-    box(BW, 0.06, BD, platformMats, BX, -0.03, BZ);
+    box(BW, 0.06, BD, platformMats, BX, T0 - 0.03, BZ);
 
-    // Base di supporto moderna scura sotto la pedana verde con striscia LED rossa Kyosho e pannelli sponsor RC
-    const underPlatformMat = new THREE.MeshStandardMaterial({ color: 0x12151c, roughness: 0.6, metalness: 0.2 });
-    box(BW - 0.16, Math.abs(FLOOR) - 0.06, BD - 0.16, underPlatformMat, BX, (FLOOR - 0.06) / 2, BZ);
+    // Struttura portante sotto il tavolo (pannelli in multistrato verniciato)
+    const underPlatformMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.85, metalness: 0.0 });
+    const underH = (T0 - 0.06) - FLOOR;
+    box(BW - 0.16, underH, BD - 0.16, underPlatformMat, BX, FLOOR + underH / 2, BZ);
 
-    // Cordolo/fascia perimetrale racing con pannelli sponsor Kyosho / PN Racing / Atomic / GL Racing
-    const fasciaM = new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.45 });
-    const ledRedMat = new THREE.MeshBasicMaterial({ color: 0xe11d48 });
+    // Fascia perimetrale opaca con profilo in alluminio spazzolato e pannelli sponsor RC
+    const fasciaM = new THREE.MeshStandardMaterial({ color: 0x1b1d21, roughness: 0.7 });
+    const aluMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.38, metalness: 0.85 });
     const fT = 0.028;
     const outline = [
       { x: BOARD.x0, z: BOARD.z0 },
@@ -243,9 +240,8 @@ export class ClubEnvironment {
       return [Math.hypot(dx, dz), (p.x + q.x) / 2, (p.z + q.z) / 2, Math.atan2(-dz, dx)];
     });
     for (const [w, x, z, ry] of borders) {
-      box(w + fT, 0.15, fT, fasciaM, x, -0.065, z, { ry });
-      // Striscia LED rossa sul profilo della pedana verde
-      box(w + fT + 0.004, 0.008, fT + 0.004, ledRedMat, x, -0.002, z, { ry, cast: false });
+      box(w + fT, 0.15, fT, fasciaM, x, T0 - 0.065, z, { ry });
+      box(w + fT + 0.004, 0.008, fT + 0.004, aluMat, x, T0 - 0.002, z, { ry, cast: false });
       const n = Math.floor(w / 1.3), nx = Math.sin(ry), nz = Math.cos(ry), tx = Math.cos(ry), tz = -Math.sin(ry);
       for (let i = 0; i < n; i++) {
         const b = B.BRANDS[Math.abs(i + Math.round(ry * 2)) % B.BRANDS.length];
@@ -253,9 +249,9 @@ export class ClubEnvironment {
         plane(
           1.1,
           0.12,
-          new THREE.MeshStandardMaterial({ map: B.brandBoard(b, 1024, 128), roughness: 0.45 }),
+          new THREE.MeshStandardMaterial({ map: B.brandBoard(b, 1024, 128), roughness: 0.6 }),
           x + tx * off + nx * 0.016,
-          -0.072,
+          T0 - 0.072,
           z + tz * off + nz * 0.016,
           { ry }
         );
@@ -380,14 +376,14 @@ export class ClubEnvironment {
       32
     );
     for (const y of [0.52, 0.98, 1.44]) {
-      box(0.36, 0.015, 1.5, new THREE.MeshPhysicalMaterial({ color: 0xdfeaf0, transmission: 0.9, roughness: 0.05, thickness: 0.01, transparent: true, opacity: 0.6 }), tx, FLOOR + y, tz, { cast: false });
+      box(0.36, 0.015, 1.5, new THREE.MeshPhysicalMaterial({ color: 0xdbe6ef, roughness: 0.08, metalness: 0.1, clearcoat: 1.0, transparent: true, opacity: 0.34, depthWrite: false }), tx, FLOOR + y, tz, { cast: false });
       for (let k = 0; k < 4; k++) {
         const s = 0.8 + ((k * 7 + y * 10) % 5) * 0.12;
         const cup = add(cupGeo, (k + Math.round(y * 10)) % 3 ? gold : silver, tx - 0.03, FLOOR + y + 0.008, tz - 0.54 + k * 0.36);
         cup.scale.setScalar(s);
       }
     }
-    plane(1.5, 1.86, new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.02, transmission: 1, thickness: 0.004, transparent: true, opacity: 0.25 }), RX1 - 0.47, FLOOR + 0.98, tz, { ry: -Math.PI / 2 });
+    plane(1.5, 1.86, new THREE.MeshPhysicalMaterial({ color: 0xe6f0fa, roughness: 0.05, metalness: 0.08, clearcoat: 1.0, transparent: true, opacity: 0.16, depthWrite: false }), RX1 - 0.47, FLOOR + 0.98, tz, { ry: -Math.PI / 2 });
 
     const corkT = canvasTex(512, 320, (g, w, h) => {
       g.fillStyle = '#b4875a'; g.fillRect(0, 0, w, h);
@@ -419,14 +415,26 @@ export class ClubEnvironment {
         box(0.22, 0.12, 0.3, new THREE.MeshStandardMaterial({ color: boxCols[(k + Math.abs(Math.round(bz))) % 6], roughness: 0.6 }), bx - 0.15, FLOOR + 0.27, bz - 0.7 + k * 0.45);
       }
       printBoxFace(box(0.5, 0.004, 0.7, matM, bx + 0.05, FLOOR + 0.927, bz - 0.2), 2);
+      // Il banco centrale (bz === -2.6) è il Banco Box personale del giocatore: monta il cavalletto anodizzato per la sua Mini-Z!
+      const isPlayerBench = Math.abs(bz - (-2.6)) < 0.05;
       buildBenchEquipment(root, M, {
         x: bx,
         y: FLOOR + 0.927,
         z: bz - 0.15,
         room: 'Legno',
-        car: true,
+        car: !isPlayerBench,
+        stand: isPlayerBench,
         worker: bz === -5.4 ? { x: 0.8, z: 0.45, rotation: Math.PI / 2, stool: false } : null
       });
+      if (isPlayerBench) {
+        this.playerWorkbenchPose = {
+          x: bx,
+          y: FLOOR + 0.927 + 0.035,
+          z: bz - 0.17,
+          heading: 0,
+          shellY: FLOOR + 0.927 + 0.008
+        };
+      }
       cyl(0.17, 0.17, 0.05, new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.6 }), bx + 0.8, FLOOR + (bz === -5.4 ? 0.61 : 0.66), bz + 0.3, { seg: 28 });
       cyl(0.025, 0.025, 0.62, M.metal, bx + 0.8, FLOOR + 0.32, bz + 0.3);
       cyl(0.22, 0.22, 0.02, M.darkMetal, bx + 0.8, FLOOR + 0.01, bz + 0.3, { seg: 28 });
@@ -493,9 +501,8 @@ export class ClubEnvironment {
     const stationScreenM = new THREE.MeshBasicMaterial({ map: this.stationDisplays.tex });
     LANES.forEach((L, i) => {
       const x = ROST.x0 + 0.85 + i * 1.45;
+      // Targhetta canale 2.4GHz FHS/ASF + display telemetria giro (senza prese banana da slot-car!)
       printBoxFace(box(0.2, 0.012, 0.12, new THREE.MeshStandardMaterial({ map: details.stationLabels[i], roughness: 0.65 }), x, railY + 0.021, railZ), 2, [0.01, 0.5]);
-      box(0.1, 0.07, 0.07, M.blackPlastic, x + 0.14, railY + 0.05, railZ);
-      cyl(0.012, 0.012, 0.012, M.metal, x + 0.14, railY + 0.05, railZ + 0.04, { rx: Math.PI / 2 });
       box(0.16, 0.08, 0.03, M.blackPlastic, x - 0.12, railY + 0.07, railZ + 0.055);
       const geometry = new THREE.PlaneGeometry(0.12, 0.06), uv = geometry.attributes.uv;
       for (let j = 0; j < uv.count; j++) uv.setX(j, (uv.getX(j) + i) / LANES.length);
@@ -530,64 +537,104 @@ export class ClubEnvironment {
     buildRoomGuests(root, clubCtx, person);
   }
 
-  // Vetrina espositiva illuminata "Kyosho AutoScale Collection" con modelli 1:27 sotto teca
+  // Vetrina espositiva illuminata "Kyosho AutoScale Collection" con veri modelli 3D in scala 1:27 sotto teca acrilica
   buildAutoScaleShowcase(parent, x, y, z) {
     const g = new THREE.Group();
     g.position.set(x, y, z);
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x161922, roughness: 0.35, metalness: 0.6 });
-    const redAccent = new THREE.MeshStandardMaterial({ color: 0xc8141b, roughness: 0.3 });
-    const ledMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x161922, roughness: 0.38, metalness: 0.55 });
+    const redAccent = new THREE.MeshStandardMaterial({ color: 0xa91d24, roughness: 0.38 });
+    const plinthMat = new THREE.MeshStandardMaterial({ color: 0x0f1218, roughness: 0.32, metalness: 0.4 });
+    const brassPlateMat = new THREE.MeshStandardMaterial({ color: 0xc9a24b, roughness: 0.28, metalness: 0.85 });
+    const ledMat = new THREE.MeshBasicMaterial({ color: 0xfff8eb });
     const glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xe2f1ff,
+      color: 0xe6f1fa,
       transparent: true,
-      opacity: 0.26,
-      roughness: 0.05,
-      transmission: 0.85
+      opacity: 0.18,
+      roughness: 0.06,
+      metalness: 0.08,
+      clearcoat: 1.0,
+      depthWrite: false
+    });
+    const domeGlassMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.14,
+      roughness: 0.04,
+      metalness: 0.05,
+      clearcoat: 1.0,
+      depthWrite: false
     });
 
-    const base = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.35, 0.44), frameMat);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.35, 0.44), frameMat);
     base.position.y = 0.175;
-    const top = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.14, 0.44), redAccent);
+    base.castShadow = true;
+    base.receiveShadow = true;
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.14, 0.44), redAccent);
     top.position.y = 1.92;
-    const back = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.50, 0.03), frameMat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.18, 1.50, 0.03), frameMat);
     back.position.set(0, 1.10, -0.20);
     g.add(base, top, back);
 
+    // Montanti laterali della vetrina
+    for (const sx of [-0.575, 0.575]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.50, 0.42), frameMat);
+      pillar.position.set(sx, 1.10, 0);
+      g.add(pillar);
+    }
+
     const headerTex = canvasTex(512, 64, (ctx, w, h) => {
-      ctx.fillStyle = '#c8141b';
+      ctx.fillStyle = '#9e1920';
       ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'italic 900 30px "Titillium Web", sans-serif';
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'italic 900 28px "Titillium Web", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('KYOSHO AUTOSCALE COLLECTION', w / 2, 43);
+      ctx.fillText('KYOSHO AUTOSCALE COLLECTION · 1:27', w / 2, 42);
     }, { clamp: true });
-    const headerPlane = new THREE.Mesh(new THREE.PlaneGeometry(1.08, 0.11), new THREE.MeshBasicMaterial({ map: headerTex }));
+    const headerPlane = new THREE.Mesh(new THREE.PlaneGeometry(1.10, 0.11), new THREE.MeshBasicMaterial({ map: headerTex }));
     headerPlane.position.set(0, 1.92, 0.222);
     g.add(headerPlane);
 
-    const colors = [0xe11d48, 0xfacc15, 0x2563eb, 0x10b981, 0xf97316, 0xec4899];
+    const showcaseSpecs = [
+      { name: 'FERRARI 499P #51', num: 51, style: 'mid', base: '#b91c1c', acc: '#eab308', acc2: '#ffffff', sponsor: 'AF CORSE', sponsor2: 'KYOSHO', sponsorCol: '#ffffff', textCol: '#fde047', drvName: 'LE MANS', rim: '#d4d8e0' },
+      { name: 'FERRARI 499P #83', num: 83, style: 'mid', base: '#eab308', acc: '#b91c1c', acc2: '#111827', sponsor: 'AF CORSE', sponsor2: 'KYOSHO', sponsorCol: '#111827', textCol: '#b91c1c', drvName: 'MODENA', rim: '#d4d8e0' },
+      { name: 'PORSCHE 963 LMDh', num: 6, style: 'front', base: '#e2e8f0', acc: '#b91c1c', acc2: '#111827', sponsor: 'PENSKE', sponsor2: 'MINI-Z', sponsorCol: '#b91c1c', textCol: '#111827', drvName: 'WERKS', rim: '#1e293b' },
+      { name: 'MAZDASPEED 787B', num: 55, style: 'back', base: '#ea580c', acc: '#15803d', acc2: '#ffffff', sponsor: 'RENOWN', sponsor2: 'KYOSHO', sponsorCol: '#ffffff', textCol: '#fde047', drvName: 'ROTARY', rim: '#e2e8f0' },
+      { name: 'NISSAN GT-R NISMO', num: 23, style: 'front', base: '#1d4ed8', acc: '#e2e8f0', acc2: '#dc2626', sponsor: 'CALSONIC', sponsor2: 'AUTOSCALE', sponsorCol: '#ffffff', textCol: '#ffffff', drvName: 'GT500', rim: '#cbd5e1' },
+      { name: 'McLAREN F1 GTR', num: 60, style: 'mid', base: '#0f766e', acc: '#f59e0b', acc2: '#ffffff', sponsor: 'FINA GTR', sponsor2: 'MINI-Z', sponsorCol: '#ffffff', textCol: '#fde047', drvName: 'LONGTAIL', rim: '#d8b448' }
+    ];
+
     for (let s = 0; s < 3; s++) {
       const sy = 0.65 + s * 0.42;
-      const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.015, 0.38), glassMat);
+      const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.10, 0.014, 0.38), glassMat);
       shelf.position.y = sy;
-      const led = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.008, 0.02), ledMat);
-      led.position.set(0, sy + 0.38, 0.15);
+      const led = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.008, 0.02), ledMat);
+      led.position.set(0, sy + 0.38, 0.14);
       g.add(shelf, led);
 
       for (let c = 0; c < 2; c++) {
-        const cx = -0.28 + c * 0.56;
-        const plinth = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.02, 0.13), frameMat);
-        plinth.position.set(cx, sy + 0.018, 0);
-        const carShell = new THREE.Mesh(
-          new THREE.BoxGeometry(0.17, 0.042, 0.078),
-          new THREE.MeshPhysicalMaterial({ color: colors[(s * 2 + c) % colors.length], roughness: 0.18, clearcoat: 1 })
-        );
-        carShell.position.set(cx, sy + 0.048, 0);
-        g.add(plinth, carShell);
+        const idx = s * 2 + c;
+        const spec = showcaseSpecs[idx];
+        const cx = -0.27 + c * 0.54;
+
+        // Basetta espositiva nera Kyosho AutoScale con targhetta dorata e teca trasparente
+        const plinth = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.018, 0.135), plinthMat);
+        plinth.position.set(cx, sy + 0.016, 0);
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.009, 0.004), brassPlateMat);
+        plate.position.set(cx, sy + 0.016, 0.068);
+        const dome = new THREE.Mesh(new THREE.BoxGeometry(0.238, 0.078, 0.124), domeGlassMat);
+        dome.position.set(cx, sy + 0.064, 0);
+
+        // Vero modello 3D d'auto da corsa in scala 1:27 (con ruote, cockpit, alettone, fari e livrea!)
+        const carModel = makeCar(spec);
+        carModel.root.scale.setScalar(1.06);
+        carModel.root.position.set(cx, sy + 0.025, 0);
+        carModel.root.rotation.y = c === 0 ? 0.22 : -0.22;
+
+        g.add(plinth, plate, carModel.root, dome);
       }
     }
 
-    const frontGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.10, 1.48), glassMat);
+    const frontGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.12, 1.48), glassMat);
     frontGlass.position.set(0, 1.10, 0.21);
     g.add(frontGlass);
     parent.add(g);
@@ -760,11 +807,17 @@ export class ClubEnvironment {
     };
   }
 
+  setAiDifficulty(level) {
+    this.aiLevel = ['none', 'beginner', 'club', 'expert', 'pro'].includes(level) ? level : 'club';
+    this.aiCarsGroup.visible = this.aiLevel !== 'none';
+  }
+
   spawnAiCars() {
     while (this.aiCarsGroup.children.length > 0) {
       this.aiCarsGroup.remove(this.aiCarsGroup.children[0]);
     }
     this.aiCars = [];
+    this.aiCarsGroup.visible = this.aiLevel !== 'none';
 
     for (let i = 1; i <= 3; i++) {
       const drv = DRIVERS[i];
@@ -786,7 +839,7 @@ export class ClubEnvironment {
 
     // Sostituisce le auto AI procedurali con veri modelli 3D Hypercar in scala 1:27 con livree WEC dedicate
     const applyGlbToAiCars = (gltfScene) => {
-      const aiTints = ['#ffd43b', '#38bdf8', '#f8fafc']; // #83 Giallo Modena, #50 Blu Corsa, #51 Bianco/Rosso
+      const aiTints = ['#eab308', '#2563eb', '#e2e8f0']; // #83 Giallo Modena, #50 Blu Corsa, #51 Bianco/Rosso
       this.aiCars.forEach((ai, idx) => {
         const clone = gltfScene.clone(true);
         const tintHex = aiTints[idx % aiTints.length];
@@ -794,14 +847,15 @@ export class ClubEnvironment {
         clone.traverse((node) => {
           const name = node.name || '';
           const matName = node.material?.name || '';
+          // Esclude anche i 150+ micro-pulsanti interni del volante per garantire 60+ FPS costanti!
           if (
-            /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|DAMAGE|glow/i.test(name) ||
-            /Rim_Blur|GLOW/i.test(matName)
+            /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|STEER_HR|DAMAGE|glow|LED_0|TXLAP|TXDEL|TXFUEL|LAPTIME|DELTA2|FUEL2|WIPER/i.test(name) ||
+            /Rim_Blur|GLOW|TRANSPARENTE|kers_|963_|sw_|shift_lights|dials_alpha|logo_cos/i.test(matName)
           ) {
             node.visible = false;
           }
           if (node.isMesh && node.visible) {
-            node.castShadow = true;
+            node.castShadow = /^Body$|^main$|Tyre|RIMS/i.test(matName);
             node.receiveShadow = true;
             node.material = Array.isArray(node.material)
               ? node.material.map((m) => (m ? m.clone() : m))
@@ -814,20 +868,16 @@ export class ClubEnvironment {
               const mName = mat.name || '';
               if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
                 mat.color?.set(tintHex);
-                mat.metalness = 0.14;
-                mat.roughness = 0.16;
+                mat.metalness = 0.06;
+                mat.roughness = 0.30;
                 if ('clearcoat' in mat) {
-                  mat.clearcoat = 1.0;
-                  mat.clearcoatRoughness = 0.04;
+                  mat.clearcoat = 0.9;
+                  mat.clearcoatRoughness = 0.08;
                 }
-                if (tintHex.toLowerCase() !== '#ffffff') {
-                  mat.emissive?.set(tintHex);
-                  mat.emissiveMap = null;
-                  mat.emissiveIntensity = 0.38;
-                } else if (/^Body$/i.test(mName) && mat.emissiveMap) {
-                  mat.emissiveIntensity = 0.0;
-                }
-                mat.envMapIntensity = 1.35;
+                if (mat.emissive) mat.emissive.setRGB(0, 0, 0);
+                mat.emissiveMap = null;
+                mat.emissiveIntensity = 0.0;
+                mat.envMapIntensity = 1.0;
                 mat.needsUpdate = true;
               }
             });
@@ -1027,8 +1077,8 @@ export class ClubEnvironment {
     const colors = [];
     const indices = [];
 
-    const cRed = new THREE.Color(0xd91b24);
-    const cWhite = new THREE.Color(0xf1f5f9);
+    const cRed = new THREE.Color(0xa8242b);
+    const cWhite = new THREE.Color(0xd8dde6);
     const cGrey = new THREE.Color(0x3f444e);
 
     for (let i = 0; i < n; i++) {
@@ -1102,21 +1152,21 @@ export class ClubEnvironment {
     const colors = [];
     const indices = [];
 
-    const cRed = new THREE.Color(0xdc2626);
-    const cWhite = new THREE.Color(0xf8fafc);
+    // Vere sponde perimetrali Kyosho RCP in gomma espansa EVA grigio-antracite scuro opaco (con piccoli inserti bianchi/rossi smorzati solo agli apici curva)
+    const cRed = new THREE.Color(0x992329);
+    const cWhite = new THREE.Color(0xcbd2dc);
     const cDark = new THREE.Color(0x232730);
+    const cDarkAlt = new THREE.Color(0x2a2f39);
 
     for (let i = 0; i < n; i++) {
       const s0 = samples[i];
       const s1 = samples[(i + 1) % n];
 
-      const isCorner = s0.cornerWeight > 0.25;
-      const bandIdx = Math.floor(i / 5);
-      let col = cDark;
-      if (isCorner) {
-        col = bandIdx % 2 === 0 ? cRed : cWhite;
-      } else if (bandIdx % 8 === 0) {
-        col = cWhite;
+      const isSharpCorner = s0.cornerWeight > 0.55;
+      const bandIdx = Math.floor(i / 6);
+      let col = bandIdx % 2 === 0 ? cDark : cDarkAlt;
+      if (isSharpCorner && bandIdx % 3 === 0) {
+        col = bandIdx % 6 === 0 ? cRed : cWhite;
       }
 
       const p0In = s0.pt.clone().addScaledVector(s0.normal, minOff);
@@ -1276,87 +1326,6 @@ export class ClubEnvironment {
       sceneryGroup.add(backing, faceFront, faceBack);
     });
 
-    // 2. Postazione Pit-Box / Gare Kyosho Mini-Z Cup al centro dell'infield verde (se libera dal tracciato)
-    if (isFarFromTrack(2.45, -1.30, laneHalf + 0.42)) {
-      const pitBuilding = new THREE.Group();
-      pitBuilding.position.set(2.45, 0, -1.30);
-
-      const basePad = new THREE.Mesh(
-        new THREE.BoxGeometry(1.65, 0.006, 0.56),
-        new THREE.MeshStandardMaterial({ color: 0x2c323d, roughness: 0.8 })
-      );
-      basePad.position.y = 0.003;
-      pitBuilding.add(basePad);
-
-      const boxBody = new THREE.Mesh(
-        new THREE.BoxGeometry(1.36, 0.14, 0.32),
-        new THREE.MeshStandardMaterial({ color: 0x181c24, roughness: 0.4, metalness: 0.3 })
-      );
-      boxBody.position.set(0, 0.073, -0.04);
-      boxBody.castShadow = true;
-      boxBody.receiveShadow = true;
-
-      // 3 Porte Box Pit-Lane sul fronte dell'edificio
-      const bayDoorMat = new THREE.MeshStandardMaterial({ color: 0x2b3342, roughness: 0.5, metalness: 0.5 });
-      for (const dx of [-0.42, 0, 0.42]) {
-        const door = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.105), bayDoorMat);
-        door.position.set(dx, 0.058, 0.122);
-        pitBuilding.add(door);
-      }
-
-      const roof = new THREE.Mesh(
-        new THREE.BoxGeometry(1.42, 0.040, 0.38),
-        new THREE.MeshStandardMaterial({ color: 0x1e2430, roughness: 0.35 })
-      );
-      roof.position.set(0, 0.158, -0.02);
-      roof.castShadow = true;
-
-      const signTex = canvasTex(1024, 96, (g, w, h) => {
-        g.fillStyle = '#c8141b';
-        g.fillRect(0, 0, w, h);
-        g.strokeStyle = '#ffffff';
-        g.lineWidth = 4;
-        g.strokeRect(6, 6, w - 12, h - 12);
-        g.fillStyle = '#ffffff';
-        g.font = 'italic 900 44px "Titillium Web", sans-serif';
-        g.textAlign = 'center';
-        g.fillText('KYOSHO MINI-Z PADDOCK · RACE SERVICE', w / 2, 63);
-      }, { clamp: true });
-      const signPlane = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.38, 0.036),
-        new THREE.MeshBasicMaterial({ map: signTex })
-      );
-      signPlane.position.set(0, 0.158, 0.172);
-
-      pitBuilding.add(boxBody, roof, signPlane);
-      sceneryGroup.add(pitBuilding);
-    }
-
-    // 3. Pile di gomme protettive rosso/bianche nelle isole interne del tappeto verde
-    const tireMatRed = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.7 });
-    const tireMatWhite = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.7 });
-    const tireGeo = new THREE.TorusGeometry(0.022, 0.009, 8, 16);
-    tireGeo.rotateX(Math.PI / 2);
-
-    const tireClusters = [
-      [-0.35, -1.55],
-      [5.15, -1.45],
-      [2.45, -3.55],
-      [0.25, -2.15],
-      [4.45, -2.15]
-    ];
-    for (const [tx, tz] of tireClusters) {
-      if (!isFarFromTrack(tx, tz, laneHalf + 0.24)) continue;
-      for (let row = 0; row < 3; row++) {
-        for (let stack = 0; stack < 2; stack++) {
-          const tMesh = new THREE.Mesh(tireGeo, (row + stack) % 2 === 0 ? tireMatRed : tireMatWhite);
-          tMesh.position.set(tx + (row - 1) * 0.052, 0.009 + stack * 0.016, tz);
-          tMesh.castShadow = true;
-          sceneryGroup.add(tMesh);
-        }
-      }
-    }
-
     this.trackGroup.add(sceneryGroup);
   }
 
@@ -1502,14 +1471,25 @@ export class ClubEnvironment {
       person.userData.animate?.(dt, 0, dist);
     }
 
-    if (this.curve && this.aiCars.length > 0) {
+    if (this.curve && this.aiCars.length > 0 && this.aiLevel !== 'none') {
+      const levelParams = {
+        beginner: { top: 3.1, min: 1.35, cornerBrk: 7.4 },
+        club:     { top: 4.1, min: 1.75, cornerBrk: 6.6 },
+        expert:   { top: 4.9, min: 2.15, cornerBrk: 5.8 },
+        pro:      { top: 5.7, min: 2.55, cornerBrk: 5.1 }
+      }[this.aiLevel] || { top: 4.1, min: 1.75, cornerBrk: 6.6 };
+
       for (let i = 0; i < this.aiCars.length; i++) {
         const ai = this.aiCars[i];
         const tNext = (ai.t + 0.025) % 1;
         const tanNow = this.curve.getTangentAt(ai.t);
         const tanAhead = this.curve.getTangentAt(tNext);
         const curvature = tanNow.angleTo(tanAhead);
-        const targetSpeed = clamp((4.4 - curvature * 6.5) * (ai.driver.pace || 1.0), 1.85, 4.5);
+        const targetSpeed = clamp(
+          (levelParams.top - curvature * levelParams.cornerBrk) * (ai.driver.pace || 1.0),
+          levelParams.min,
+          levelParams.top
+        );
         ai.speed += (targetSpeed - ai.speed) * Math.min(1, dt * 6);
 
         const prevT = ai.t;

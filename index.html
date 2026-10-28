@@ -14,29 +14,58 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <!-- SCHERMATA DI CARICAMENTO UFFICIALE -->
+  <!-- SCHERMATA DI AVVIO TELEMETRICA PROFESSIONALE KYOSHO MINI-Z WEC -->
   <div id="loading-screen" class="loading-overlay">
+    <div class="loading-backdrop-grid"></div>
     <div class="loading-card">
       <div class="loading-top-row">
-        <span class="loading-tag">KYOSHO MINI-Z INDOOR CLUB • SCALA REALE 1:27</span>
-        <span class="version-pill">v1.2.0</span>
+        <div class="loading-brand-pill">
+          <span class="brand-dot"></span>
+          <span class="loading-tag">KYOSHO MINI-Z MR-04 EVO2 • TELEMETRIA UFFICIALE 1:27</span>
+        </div>
+        <span class="version-pill">v1.4.0</span>
       </div>
+
       <div class="loading-hero">
-        <img src="/app-icon.jpg" alt="Mini-Z Club Simulator Icon" class="loading-icon-img" />
+        <div class="loading-icon-frame">
+          <img src="/app-icon.jpg" alt="Mini-Z Club Simulator" class="loading-icon-img" />
+          <span class="loading-scale-chip">1:27 RC</span>
+        </div>
         <div class="loading-title-wrap">
+          <div class="loading-kicker">SIMULATORE RC INDOOR AD ALTA PRECISIONE</div>
           <h1>MINI-Z CLUB SIMULATOR</h1>
-          <p class="loading-subtitle">Sala Club Realistica • Tavolo Pista RCP • Officina 3 Banchi &amp; Direzione Gara</p>
-          <div class="scale-badges">
-            <span>🏎️ Auto: 17,2 × 7,8 cm</span>
-            <span>⬛ Tavolo RCP: +85 cm</span>
-            <span>👀 Pedana Piloti: +45 cm (Occhi +1,24 m)</span>
-          </div>
+          <p class="loading-subtitle">
+            Fisica Proporzionale ESC ICS • Telaio Meccanico MR-04 EVO2 • Mattonelle in Gomma EVA Kyosho RCP • Banco Box Interattivo
+          </p>
+        </div>
+      </div>
+
+      <div class="loading-specs-grid">
+        <div class="spec-tile">
+          <span class="spec-label">TELAIO &amp; PASSO</span>
+          <strong class="spec-val">MR-04 EVO2 • 98 mm</strong>
+          <small class="spec-sub">17,2 × 7,8 cm in scala 1:27</small>
+        </div>
+        <div class="spec-tile">
+          <span class="spec-label">ALIMENTAZIONE</span>
+          <strong class="spec-val">4× AAA Ni-MH 800mAh</strong>
+          <small class="spec-sub">Curva reale 5,60 V → 4,10 V</small>
+        </div>
+        <div class="spec-tile">
+          <span class="spec-label">SUPERFICIE PISTA</span>
+          <strong class="spec-val">Kyosho RCP Foam</strong>
+          <small class="spec-sub">Finestra termica gomme 34–48 °C</small>
+        </div>
+        <div class="spec-tile">
+          <span class="spec-label">RADIOCOMANDO</span>
+          <strong class="spec-val">2.4 GHz FHS / ASF</strong>
+          <small class="spec-sub">Grilletto &amp; Sterzo 1:1 a ritorno istantaneo</small>
         </div>
       </div>
 
       <div class="loading-progress-section">
         <div class="loading-status-row">
-          <span id="loading-status-text">Preparazione sala club e caricamento modello 3D Ferrari 499P...</span>
+          <span id="loading-status-text">Inizializzazione sala club e calibrazione telaio MR-04 EVO2...</span>
           <span id="loading-percent">0%</span>
         </div>
         <div class="loading-bar-bg">
@@ -45,7 +74,7 @@
       </div>
 
       <div class="loading-tips">
-        <strong>💡 Consiglio dal Banco Box:</strong> Il profilo del tuo Joypad e l'assetto vengono salvati <em>automaticamente</em> per ogni combinazione di Auto e Pista!
+        <span>🔧 <strong>Banco Lavoro 3D Attivo:</strong> Apri il <em>Banco Box</em> per lavorare sull'auto appoggiata sul cavalletto anodizzato, smontare la carrozzeria, ricaricare le 4 pile ministilo AAA e cambiare mescola gomme!</span>
       </div>
     </div>
   </div>
@@ -68,7 +97,7 @@
       <!-- 1. Riquadrino Versione -->
       <div class="hud-box version-box" title="Versione attuale dell'applicazione">
         <span class="box-label">VERSIONE</span>
-        <span id="hud-version-val" class="box-value">v1.3.0</span>
+        <span id="hud-version-val" class="box-value">v1.4.0</span>
       </div>
 
       <!-- 2. Riquadrino 3 Modalità Risoluzione Grafica con indicatore attivo -->
@@ -145,19 +174,19 @@
       </div>
       <div class="quick-utility-row">
         <button type="button" id="btn-restart-race" class="utility-btn" title="Rimetti l'auto sulla linea di partenza e azzera il cronometro (Tasto Spazio)">
-          🔄 Riavvia Gara (Spazio)
+          🔄 Riavvia (Spazio)
         </button>
         <button type="button" id="btn-marshal-reset" class="utility-btn" title="Il commissario rimette dritta la Mini-Z in pista (Tasto R)">
           🦺 Commissario (R)
         </button>
-        <button type="button" id="btn-toggle-shell-quick" class="utility-btn" title="Mostra o nascondi la carrozzeria sopra il telaio">
-          🔍 Togli Carrozzeria
+        <button type="button" id="btn-open-workbench-quick" class="utility-btn bench-shortcut-btn" title="Porta l'auto sul Banco Lavoro per regolare assetto, gomme, batterie e vedere il telaio MR-04">
+          🔧 Banco Lavoro
         </button>
       </div>
     </div>
   </aside>
 
-  <!-- CRUSCOTTO VELOCITÀ E BARRE RADIOCOMANDO IN DIRETTA (BASSO DESTRA) -->
+  <!-- CRUSCOTTO VELOCITÀ, STATO BATTERIE 4xAAA, GOMME E BARRE RADIOCOMANDO IN DIRETTA (BASSO DESTRA) -->
   <aside class="right-telemetry-panel">
     <div class="speed-card">
       <div class="speed-main">
@@ -166,6 +195,26 @@
       </div>
       <div class="speed-scale-sub">
         Velocità in scala 1:27: <strong id="hud-speed-scale">0</strong> km/h
+      </div>
+      <div class="sim-vitals-grid">
+        <div class="vital-box">
+          <div class="vital-top">
+            <span>🔋 4×AAA Ni-MH</span>
+            <strong id="hud-batt-text">100% • 5.58V</strong>
+          </div>
+          <div class="bar-track">
+            <div id="hud-batt-bar" class="bar-fill batt-fill" style="width: 100%;"></div>
+          </div>
+        </div>
+        <div class="vital-box">
+          <div class="vital-top">
+            <span>🛞 GOMME RCP</span>
+            <strong id="hud-tire-text">100% • 23°C</strong>
+          </div>
+          <div class="bar-track">
+            <div id="hud-tire-bar" class="bar-fill tire-fill" style="width: 100%;"></div>
+          </div>
+        </div>
       </div>
       <div class="live-bars">
         <div class="bar-row">
@@ -241,25 +290,41 @@
               <input type="checkbox" id="chk-reverse-track" />
               <span>🔄 Inverti senso di marcia della pista (Antiorario)</span>
             </label>
+            <div class="ai-difficulty-selector">
+              <label for="sel-ai-difficulty">🤖 Livello Avversari IA:</label>
+              <select id="sel-ai-difficulty">
+                <option value="none">Pista Libera (0 Auto IA — Allenamento)</option>
+                <option value="beginner">Principiante (Giro ~7.6s)</option>
+                <option value="club" selected>Club Amatoriale (Giro ~6.5s)</option>
+                <option value="expert">Esperto Nazionale (Giro ~5.7s)</option>
+                <option value="pro">Campione Kyosho Cup (Giro ~5.1s)</option>
+              </select>
+            </div>
             <button type="button" id="btn-reset-lap-session" class="secondary-btn">
               ⏱️ Azzera Cronometro Sessione
             </button>
           </div>
         </section>
 
-        <!-- SCHEDA 2: BANCO BOX (AUTO, TELAIO, GOMME, MOTORE, AMMORTIZZATORI) -->
+        <!-- SCHEDA 2: BANCO BOX (AUTO SUL BANCO LAVORO 3D, TELAIO MR-04, GOMME, BATTERIE, MOTORE) -->
         <section id="tab-workbench" class="tab-pane">
           <div class="workbench-top-banner">
             <div>
-              <h3>🔧 Il Tuo Banchetto da Lavoro (Scala 1:27 • 17,2 × 7,8 cm)</h3>
-              <p>Ogni modifica viene salvata in automatico per questa Auto e questa Pista.</p>
+              <h3>🔧 Banco Lavoro Illuminato (Auto sul Cavalletto a Sinistra • Ruota con il Mouse!)</h3>
+              <p>Osserva dal vivo la tua Mini-Z sul banco: puoi smontare la carrozzeria sul tappetino, ricaricare le pile ministilo AAA e cambiare gomme e componenti.</p>
             </div>
             <div class="workbench-quick-btns">
-              <button type="button" id="btn-Toggle-naked-chassis" class="secondary-btn">
-                🔍 Togli Carrozzeria (Vedi Telaio Nudo)
+              <button type="button" id="btn-Toggle-naked-chassis" class="primary-btn">
+                🔍 Smonta Carrozzeria sul Banco (Vedi Telaio MR-04)
+              </button>
+              <button type="button" id="btn-refill-batteries" class="secondary-btn">
+                🔋 Carica 4×AAA Ni-MH (5,60V)
+              </button>
+              <button type="button" id="btn-replace-tires" class="secondary-btn">
+                🛞 Gomme Nuove (100%)
               </button>
               <label class="upload-glb-label">
-                📂 Aggiungi Modello 3D (.glb)
+                📂 Carica .glb
                 <input type="file" id="input-custom-glb" accept=".glb,.gltf" hidden />
               </label>
             </div>
@@ -557,7 +622,7 @@
     if ('caches' in window) {
       caches.keys().then((keys) => {
         keys.forEach((k) => {
-          if (k !== 'miniz-club-sim-v1.3.0') caches.delete(k);
+          if (k !== 'miniz-club-sim-v1.4.0') caches.delete(k);
         });
       }).catch(() => {});
     }

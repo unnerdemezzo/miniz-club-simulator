@@ -1,4 +1,4 @@
-export const ROOM_LINK = { z0: -1.1, z1: 0.5, height: 2.25 };
+export const ROOM_LINK = { z0: 2.0, z1: 3.6, height: 2.45 };
 
 export const CLUB_TRACKS = {
   wood: {

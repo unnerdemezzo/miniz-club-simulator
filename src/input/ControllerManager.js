@@ -216,12 +216,12 @@ export class ControllerManager {
     if (pad) {
       const rest = this.deviceRestingState.get(pad.index);
 
-      // Se siamo in modalità "Premi per assegnare" sul joypad: ascolta tutte le periferiche non-ButtonBox (o quella selezionata)
+      // Se siamo in modalità "Premi per assegnare" sul joypad: ascolta sia Assi analogici (grilletti/pedali) sia Bottoni!
       if (this.listeningForBinding) {
         if (this.listeningForBinding.type === 'pad_axis') {
           for (let i = 0; i < pad.axes.length; i++) {
             const base = this.baselineAxes[i] ?? 0;
-            if (Math.abs(pad.axes[i] - base) > 0.45) {
+            if (Math.abs(pad.axes[i] - base) > 0.40) {
               if (rest) rest.activeAxes.add(i);
               const { field, onComplete } = this.listeningForBinding;
               this.listeningForBinding = null;
@@ -230,14 +230,35 @@ export class ControllerManager {
             }
           }
         } else if (this.listeningForBinding.type === 'pad_button') {
-          for (let i = 0; i < pad.buttons.length; i++) {
-            const baseBtn = rest?.buttons[i] ?? 0;
-            if ((pad.buttons[i].pressed || pad.buttons[i].value > 0.6) && Math.abs(pad.buttons[i].value - baseBtn) > 0.35) {
-              if (rest) rest.activeButtons.add(i);
-              const { field, onComplete } = this.listeningForBinding;
-              this.listeningForBinding = null;
-              if (onComplete) onComplete(field, i);
-              break;
+          const { field, onComplete } = this.listeningForBinding;
+          const isTriggerField = field === 'padThrottleBtn' || field === 'padBrakeBtn';
+          let captured = false;
+
+          // Per Acceleratore e Freno controlla prima se il grilletto/pedale muove un asse analogico dedicato
+          if (isTriggerField) {
+            const steerIdx = b.padSteerAxis ?? 0;
+            for (let i = 0; i < pad.axes.length; i++) {
+              if (i === steerIdx) continue;
+              const base = this.baselineAxes[i] ?? 0;
+              if (Math.abs(pad.axes[i] - base) > 0.45) {
+                if (rest) rest.activeAxes.add(i);
+                this.listeningForBinding = null;
+                captured = true;
+                if (onComplete) onComplete(field, `axis:${i}`);
+                break;
+              }
+            }
+          }
+
+          if (!captured) {
+            for (let i = 0; i < pad.buttons.length; i++) {
+              const baseBtn = rest?.buttons[i] ?? 0;
+              if ((pad.buttons[i].pressed || pad.buttons[i].value > 0.5) && Math.abs(pad.buttons[i].value - baseBtn) > 0.30) {
+                if (rest) rest.activeButtons.add(i);
+                this.listeningForBinding = null;
+                if (onComplete) onComplete(field, i);
+                break;
+              }
             }
           }
         }
@@ -253,25 +274,45 @@ export class ControllerManager {
         }
       }
 
-      // Acceleratore e Freno (solo se sbloccati dallo stato iniziale a riposo)
+      // Funzione di lettura proporzionale (0.00 -> 1.00) per Grilletto/Pedale Gas e Freno (supporta sia Bottoni analogici R2/L2 sia Assi analogici!)
+      const readProportionalTrigger = (binding, defaultBtnIdx) => {
+        const bind = binding ?? defaultBtnIdx;
+        if (typeof bind === 'string' && bind.startsWith('axis:')) {
+          const axIdx = Number(bind.split(':')[1]);
+          if (pad.axes[axIdx] !== undefined) {
+            const cur = pad.axes[axIdx];
+            const restVal = rest?.axes[axIdx] ?? 0;
+            if (rest && !rest.activeAxes.has(axIdx)) return 0;
+            // Se l'asse a riposo parte da -1.0 (tipico dei grilletti/pedali analogici USB), mappa [-1..+1] -> [0..1]
+            if (restVal < -0.45) {
+              return Math.max(0, Math.min(1, (cur - restVal) / Math.max(0.2, 1 - restVal)));
+            }
+            if (restVal > 0.45) {
+              return Math.max(0, Math.min(1, (restVal - cur) / Math.max(0.2, restVal + 1)));
+            }
+            return Math.max(0, Math.min(1, Math.abs(cur - restVal)));
+          }
+          return 0;
+        }
+
+        const btnIdx = Number(bind);
+        const btn = pad.buttons[btnIdx];
+        if (!btn) return 0;
+        if (rest && !rest.activeButtons.has(btnIdx) && (rest.buttons[btnIdx] ?? 0) >= 0.1) return 0;
+        return Math.max(0, Math.min(1, btn.value ?? (btn.pressed ? 1 : 0)));
+      };
+
+      // Acceleratore e Freno proporzionali 0% -> 100%
       if (b.padThrottleAxis >= 0 && pad.axes[b.padThrottleAxis] !== undefined) {
         const axVal = pad.axes[b.padThrottleAxis];
         const isUnlocked = rest ? rest.activeAxes.has(b.padThrottleAxis) : true;
         if (isUnlocked) {
-          if (axVal < -0.05) padThr = -axVal;
-          else if (axVal > 0.05) padBrk = axVal;
+          if (axVal < -0.03) padThr = Math.min(1, -axVal);
+          else if (axVal > 0.03) padBrk = Math.min(1, axVal);
         }
       } else {
-        const thrIdx = b.padThrottleBtn ?? 7;
-        const brkIdx = b.padBrakeBtn ?? 6;
-        const thrBtn = pad.buttons[thrIdx];
-        const brkBtn = pad.buttons[brkIdx];
-        if (thrBtn && (!rest || rest.activeButtons.has(thrIdx) || (rest.buttons[thrIdx] ?? 0) < 0.1)) {
-          padThr = thrBtn.value;
-        }
-        if (brkBtn && (!rest || rest.activeButtons.has(brkIdx) || (rest.buttons[brkIdx] ?? 0) < 0.1)) {
-          padBrk = brkBtn.value;
-        }
+        padThr = readProportionalTrigger(b.padThrottleBtn, 7);
+        padBrk = readProportionalTrigger(b.padBrakeBtn, 6);
       }
 
       // Pulsanti azione Joypad
@@ -298,9 +339,23 @@ export class ControllerManager {
     }
 
     // Combina Tastiera e Joypad (la tastiera ha sempre priorità immediata quando premuta)
-    this.rawSteer = Math.abs(keySteer) > 0.01 ? keySteer : (Math.abs(padSteer) > 0.04 ? padSteer : 0);
-    this.rawThrottle = Math.max(padThr, keyThr);
-    this.rawBrake = Math.max(padBrk, keyBrk);
+    const usingKeySteer = Math.abs(keySteer) > 0.01;
+    this.rawSteer = usingKeySteer ? keySteer : (Math.abs(padSteer) > 0.025 ? padSteer : 0);
+
+    // Se si usa la tastiera (o un bottone digitale), applica una rampa progressiva morbida così non è mai ON/OFF!
+    if (keyThr > 0) {
+      this._keyThrRamp = Math.min(1, (this._keyThrRamp || 0) + dt * 2.8);
+    } else {
+      this._keyThrRamp = Math.max(0, (this._keyThrRamp || 0) - dt * 6.0);
+    }
+    if (keyBrk > 0) {
+      this._keyBrkRamp = Math.min(1, (this._keyBrkRamp || 0) + dt * 3.0);
+    } else {
+      this._keyBrkRamp = Math.max(0, (this._keyBrkRamp || 0) - dt * 7.0);
+    }
+
+    this.rawThrottle = Math.max(padThr, this._keyThrRamp);
+    this.rawBrake = Math.max(padBrk, this._keyBrkRamp);
 
     if (ctrl.invertSteering) this.rawSteer = -this.rawSteer;
     if (ctrl.invertThrottle) {
@@ -310,26 +365,44 @@ export class ControllerManager {
     }
 
     // Deadzone + Exponential + Dual Rate + Trim
-    const steerClean = this.applyDeadzone(this.rawSteer, ctrl.deadzone);
-    const steerCurved = this.applyExpCurve(steerClean, ctrl.steeringExp);
+    const steerClean = this.applyDeadzone(this.rawSteer, Math.min(15, ctrl.deadzone ?? 5));
+    const steerCurved = this.applyExpCurve(steerClean, ctrl.steeringExp ?? -25);
     const dualRateFactor = (ctrl.steeringDualRate ?? 100) / 100;
     const trimOffset = (ctrl.steeringTrim ?? 0) / 100;
     const targetSteer = Math.max(-1.25, Math.min(1.25, steerCurved * dualRateFactor + trimOffset));
 
-    // Velocità Servosterzo
-    const servoRate = 10.0 * ((ctrl.servoSpeed ?? 100) / 100);
-    const step = Math.min(1, servoRate * dt);
-    this.processedSteer += (targetSteer - this.processedSteer) * step;
+    // Ritorno immediato 1:1 con lo stick analogico: quando molli lo stick, le ruote seguono istantaneamente il ritorno dello stick!
+    const isReturningToCenter =
+      Math.abs(targetSteer) <= Math.abs(this.processedSteer) ||
+      targetSteer * this.processedSteer <= 0;
 
-    // Gas e Freno con Esponenziale e EPA
-    const thrClean = this.applyDeadzone(this.rawThrottle, Math.min(8, ctrl.deadzone));
-    const thrCurved = this.applyExpCurve(thrClean, ctrl.throttleExp);
+    if (!usingKeySteer) {
+      if (isReturningToCenter) {
+        // Segue direttamente il ritorno fisico dello stick senza alcun ritardo
+        this.processedSteer = targetSteer;
+      } else {
+        const padRate = 36.0 * ((ctrl.servoSpeed ?? 100) / 100);
+        this.processedSteer += (targetSteer - this.processedSteer) * Math.min(1, padRate * dt);
+      }
+    } else {
+      // Con tastiera: sterzata fluida in ingresso e riallineamento rapido appena lasci il tasto
+      const keyRate = isReturningToCenter ? 32.0 : 12.0 * ((ctrl.servoSpeed ?? 100) / 100);
+      this.processedSteer += (targetSteer - this.processedSteer) * Math.min(1, keyRate * dt);
+    }
+
+    // Gas e Freno con curva progressiva morbida (mai ON/OFF) e EPA
+    const thrClean = this.applyDeadzone(this.rawThrottle, Math.min(6, ctrl.deadzone ?? 5));
+    const effectiveThrExp = (ctrl.throttleExp ?? 0) - 28; // Curva progressiva dolce ai bassi regimi di default
+    const thrCurved = this.applyExpCurve(thrClean, effectiveThrExp);
     const thrTrim = (ctrl.throttleTrim ?? 0) / 200;
-    this.processedThrottle = Math.max(0, Math.min(1.15, thrCurved + thrTrim));
+    const targetThr = Math.max(0, Math.min(1.15, thrCurved + thrTrim));
+    this.processedThrottle += (targetThr - this.processedThrottle) * Math.min(1, dt * 28);
 
-    const brkClean = this.applyDeadzone(this.rawBrake, Math.min(8, ctrl.deadzone));
+    const brkClean = this.applyDeadzone(this.rawBrake, Math.min(6, ctrl.deadzone ?? 5));
+    const brkCurved = this.applyExpCurve(brkClean, -32); // Frenata modulabile e progressiva
     const brakeEpa = (ctrl.brakeStrength ?? 95) / 100;
-    this.processedBrake = Math.max(0, Math.min(1.25, brkClean * brakeEpa));
+    const targetBrk = Math.max(0, Math.min(1.25, brkCurved * brakeEpa));
+    this.processedBrake += (targetBrk - this.processedBrake) * Math.min(1, dt * 28);
 
     return {
       steer: this.processedSteer,

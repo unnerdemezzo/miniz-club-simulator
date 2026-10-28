@@ -12,6 +12,8 @@ import {
   T_PLATES,
   DIFFERENTIALS
 } from '../data/parts.js';
+import { TRACK_Y } from '../club/config.js';
+import { buildMR04Chassis } from './mr04-chassis.js';
 
 export class MiniZCar {
   constructor(scene, onLoadProgress) {
@@ -61,154 +63,118 @@ export class MiniZCar {
       braking: false,
       slipAmount: 0,
       isFlipped: false,
-      flipTimer: 0
+      flipTimer: 0,
+      // Telemetria Simulatore Reale: Batterie 4xAAA NiMH (800mAh) e Gomme Urethane/Radial (Temperatura & Usura)
+      batteryPct: 100.0,
+      batteryVoltage: 5.58,
+      tireWearPct: 100.0,
+      tireTempC: 23.0,
+      tireGripFactor: 0.94
     };
 
+    this.onWorkbench = false;
+    // Posizione sul supporto del banco lavoro (aggiornata dalla sala con le coordinate reali del banco)
+    this.workbenchPose = { x: -5.05, y: 0.112, z: -2.72, heading: 0, shellY: 0.079 };
     this.currentSetup = null;
+    // Il piano del tappeto RCP coincide con il piano pista della sala (TRACK_Y) + spessore mattonelle (8 mm)
+    this.trackSurfaceY = TRACK_Y;
+    this.state.y = this.trackSurfaceY + 0.008;
     this.buildDetailedChassis3D();
     this.buildLights3D();
+    this.buildHeadlightBeamsAndSkids();
   }
 
-  // Costruisce il vero telaio Kyosho Mini-Z (14.5 cm telaio interno dentro i 17.2 cm di carrozzeria)
-  buildDetailedChassis3D() {
-    const carbonMat = new THREE.MeshStandardMaterial({
-      color: 0x151922,
-      roughness: 0.35,
-      metalness: 0.45
-    });
-    const goldMat = new THREE.MeshStandardMaterial({
-      color: 0xf59e0b,
-      roughness: 0.25,
-      metalness: 0.85
-    });
-    const pcbMat = new THREE.MeshStandardMaterial({
-      color: 0x065f46,
-      roughness: 0.5
-    });
-    const batteryBlueMat = new THREE.MeshStandardMaterial({
-      color: 0x0284c7,
-      roughness: 0.3,
-      metalness: 0.5
+  // Fasci luminosi LED realistici proiettati sul tappeto RCP + segni gomma dinamici in derapata
+  buildHeadlightBeamsAndSkids() {
+    this.beamGroup = new THREE.Group();
+    const beamCanvas = document.createElement('canvas');
+    beamCanvas.width = 128;
+    beamCanvas.height = 256;
+    const ctx = beamCanvas.getContext('2d');
+    const grad = ctx.createRadialGradient(64, 240, 4, 64, 90, 120);
+    grad.addColorStop(0, 'rgba(220, 242, 255, 0.55)');
+    grad.addColorStop(0.45, 'rgba(186, 230, 253, 0.22)');
+    grad.addColorStop(1, 'rgba(186, 230, 253, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 256);
+
+    const beamTex = new THREE.CanvasTexture(beamCanvas);
+    const beamMat = new THREE.MeshBasicMaterial({
+      map: beamTex,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
     });
 
-    // Piastra inferiore telaio principale (Main Chassis)
-    const mainPlate = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.004, 0.128), carbonMat);
-    mainPlate.position.set(0, 0.009, 0);
-    mainPlate.castShadow = true;
-    this.chassisGroup.add(mainPlate);
+    const leftBeam = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.28), beamMat);
+    leftBeam.rotation.x = -Math.PI / 2;
+    leftBeam.position.set(0.024, 0.002, 0.21);
 
-    // Paraurti anteriore in spugna/plastica (Front Bumper Mini-Z)
-    const bumper = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.005, 0.018), carbonMat);
-    bumper.position.set(0, 0.009, 0.072);
-    this.chassisGroup.add(bumper);
+    const rightBeam = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.28), beamMat);
+    rightBeam.rotation.x = -Math.PI / 2;
+    rightBeam.position.set(-0.024, 0.002, 0.21);
 
-    // 4 Batterie Ministilo AAA in scala reale (44.5mm x 10.5mm ciascuna!)
-    const aaaGeo = new THREE.CylinderGeometry(0.0052, 0.0052, 0.044, 12);
-    const batteryOffsets = [
-      { x: -0.021, z:  0.008 },
-      { x: -0.021, z: -0.016 },
-      { x:  0.021, z:  0.008 },
-      { x:  0.021, z: -0.016 }
-    ];
-    for (const pos of batteryOffsets) {
-      const cell = new THREE.Mesh(aaaGeo, batteryBlueMat);
-      cell.rotation.x = Math.PI / 2;
-      cell.position.set(pos.x, 0.015, pos.z);
-      this.chassisGroup.add(cell);
+    // Alone rosso posteriore stop LED sul tappeto RCP in frenata
+    const brakeCanvas = document.createElement('canvas');
+    brakeCanvas.width = 128;
+    brakeCanvas.height = 128;
+    const bctx = brakeCanvas.getContext('2d');
+    const bgrad = bctx.createRadialGradient(64, 64, 4, 64, 64, 60);
+    bgrad.addColorStop(0, 'rgba(255, 20, 40, 0.65)');
+    bgrad.addColorStop(1, 'rgba(255, 20, 40, 0.0)');
+    bctx.fillStyle = bgrad;
+    bctx.fillRect(0, 0, 128, 128);
+    this.rearBrakeGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.14, 0.10),
+      new THREE.MeshBasicMaterial({
+        map: new THREE.CanvasTexture(brakeCanvas),
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    this.rearBrakeGlow.rotation.x = -Math.PI / 2;
+    this.rearBrakeGlow.position.set(0, 0.002, -0.11);
+    this.rearBrakeGlow.visible = false;
+
+    this.beamGroup.add(leftBeam, rightBeam, this.rearBrakeGlow);
+    this.rootGroup.add(this.beamGroup);
+
+    // Pool leggero di segni gomma lasciati in curva/drift sul tappeto RCP (zero impatto sugli FPS)
+    this.skidGroup = new THREE.Group();
+    this.scene.add(this.skidGroup);
+    this.skidPool = [];
+    this.skidCursor = 0;
+    const skidGeo = new THREE.PlaneGeometry(0.014, 0.036);
+    skidGeo.rotateX(-Math.PI / 2);
+    const skidMat = new THREE.MeshBasicMaterial({
+      color: 0x111318,
+      transparent: true,
+      opacity: 0.38,
+      depthWrite: false
+    });
+    for (let i = 0; i < 90; i++) {
+      const m = new THREE.Mesh(skidGeo, skidMat);
+      m.visible = false;
+      this.skidGroup.add(m);
+      this.skidPool.push(m);
     }
+  }
 
-    // Scheda Elettronica centrale ICS / ESC + Dissipatore Dorato
-    const escBox = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.012, 0.036), pcbMat);
-    escBox.position.set(0, 0.017, 0.012);
-    this.chassisGroup.add(escBox);
-
-    const heatsink = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.005, 0.022), goldMat);
-    heatsink.position.set(0, 0.025, 0.012);
-    this.chassisGroup.add(heatsink);
-
-    // Sospensione anteriore + 2 Molle Anteriori (Kingpin Coil Springs) che cambiano colore!
-    const springGeo = new THREE.CylinderGeometry(0.0032, 0.0032, 0.013, 12);
-    const springMat = new THREE.MeshStandardMaterial({
-      color: 0xeab308,
-      roughness: 0.3,
-      metalness: 0.6
+  // Costruisce il vero telaio Kyosho Mini-Z MR-04 EVO2 (vasca, 4 celle AAA, scheda ICS, kingpin, motore, differenziale, ruote a razze)
+  buildDetailedChassis3D() {
+    const built = buildMR04Chassis({
+      wheelbase: REAL_SCALE.WHEELBASE,
+      wheelRadius: REAL_SCALE.WHEEL_RADIUS,
+      halfTrack: 0.033
     });
-    const leftSpring = new THREE.Mesh(springGeo, springMat);
-    leftSpring.position.set(0.024, 0.018, 0.049);
-    const rightSpring = new THREE.Mesh(springGeo, springMat);
-    rightSpring.position.set(-0.024, 0.018, 0.049);
-    this.springMeshes = [leftSpring, rightSpring];
-    this.chassisGroup.add(leftSpring, rightSpring);
-
-    // T-Plate in carbonio posteriore + Ammortizzatore centrale superiore (Center Shock)
-    const tPlate = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.002, 0.038), carbonMat);
-    tPlate.position.set(0, 0.008, -0.036);
-    this.chassisGroup.add(tPlate);
-
-    const centerShock = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0035, 0.0035, 0.034, 10),
-      goldMat
-    );
-    centerShock.rotation.x = Math.PI / 2;
-    centerShock.position.set(0, 0.027, -0.026);
-    this.chassisGroup.add(centerShock);
-
-    // Banchino Motore Posteriore (Motor Pod) + Cassa Motore Brushless colorata
-    const motorPod = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.018, 0.032), carbonMat);
-    motorPod.position.set(0, 0.015, -0.046);
-    this.chassisGroup.add(motorPod);
-
-    const motorCanMat = new THREE.MeshStandardMaterial({
-      color: 0x3b82f6,
-      roughness: 0.25,
-      metalness: 0.85
-    });
-    this.motorCanMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0075, 0.0075, 0.024, 16),
-      motorCanMat
-    );
-    this.motorCanMesh.rotation.z = Math.PI / 2;
-    this.motorCanMesh.position.set(0.002, 0.017, -0.044);
-    this.chassisGroup.add(this.motorCanMesh);
-
-    // 4 Ruote del telaio (visibili quando si toglie la carrozzeria o con carrozzerie senza ruote)
-    const tireMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.75 });
-    const rimMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.25, metalness: 0.75 });
-
-    const createWheel = (isRear) => {
-      const wGroup = new THREE.Group();
-      const width = isRear ? 0.014 : 0.011; // 14mm dietro (Wide), 11mm davanti (Narrow)
-      const radius = REAL_SCALE.WHEEL_RADIUS; // 12.5mm raggio = 25mm diametro reale
-      const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, width, 24), tireMat);
-      tire.rotation.z = Math.PI / 2;
-      const rim = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.72, radius * 0.72, width + 0.001, 16), rimMat);
-      rim.rotation.z = Math.PI / 2;
-      const spoke = new THREE.Mesh(new THREE.BoxGeometry(width + 0.0015, radius * 1.3, 0.003), goldMat);
-      wGroup.add(tire, rim, spoke);
-      return wGroup;
-    };
-
-    const halfTrack = 0.033;
-    const halfWb = REAL_SCALE.WHEELBASE / 2; // 0.049m (98mm wheelbase / 2)
-
-    this.chassisWheelMeshes.lf = createWheel(false);
-    this.chassisWheelMeshes.lf.position.set(halfTrack, REAL_SCALE.WHEEL_RADIUS, halfWb);
-
-    this.chassisWheelMeshes.rf = createWheel(false);
-    this.chassisWheelMeshes.rf.position.set(-halfTrack, REAL_SCALE.WHEEL_RADIUS, halfWb);
-
-    this.chassisWheelMeshes.lr = createWheel(true);
-    this.chassisWheelMeshes.lr.position.set(halfTrack, REAL_SCALE.WHEEL_RADIUS, -halfWb);
-
-    this.chassisWheelMeshes.rr = createWheel(true);
-    this.chassisWheelMeshes.rr.position.set(-halfTrack, REAL_SCALE.WHEEL_RADIUS, -halfWb);
-
-    this.chassisGroup.add(
-      this.chassisWheelMeshes.lf,
-      this.chassisWheelMeshes.rf,
-      this.chassisWheelMeshes.lr,
-      this.chassisWheelMeshes.rr
-    );
+    this.chassisGroup.add(built.group);
+    this.springMeshes = [built.springMesh];
+    this.motorCanMesh = built.motorCan;
+    this.chassisWheelMeshes.lf = built.wheels.lf;
+    this.chassisWheelMeshes.rf = built.wheels.rf;
+    this.chassisWheelMeshes.lr = built.wheels.lr;
+    this.chassisWheelMeshes.rr = built.wheels.rr;
   }
 
   buildLights3D() {
@@ -264,18 +230,18 @@ export class MiniZCar {
         const gltfScene = await this.fetchGlbModel(bodySpec.glbUrl);
         const clone = gltfScene.clone(true);
 
-        // Nasconde i nodi sfocati (RIM_BLUR), i billboard opachi (glowx) e i LOD a bassa risoluzione presenti nel file .glb
+        // Nasconde i nodi sfocati (RIM_BLUR), i billboard opachi (glowx) e i 150+ micro-pulsanti invisibili del volante interno per massimizzare gli FPS!
         clone.traverse((node) => {
           const name = node.name || '';
           const matName = node.material?.name || '';
           if (
-            /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|DAMAGE|glow/i.test(name) ||
-            /Rim_Blur|GLOW/i.test(matName)
+            /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|STEER_HR|DAMAGE|glow|LED_0|TXLAP|TXDEL|TXFUEL|LAPTIME|DELTA2|FUEL2|WIPER/i.test(name) ||
+            /Rim_Blur|GLOW|TRANSPARENTE|kers_|963_|sw_|shift_lights|dials_alpha|logo_cos/i.test(matName)
           ) {
             node.visible = false;
           }
           if (node.isMesh && node.visible) {
-            node.castShadow = true;
+            node.castShadow = /^Body$|^main$|Tyre|RIMS/i.test(matName);
             node.receiveShadow = true;
 
             // Clona e calibra i materiali PBR del modello 3D Ferrari 499P
@@ -297,21 +263,18 @@ export class MiniZCar {
               if (mat.map) mat.map.anisotropy = 8;
 
               if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
+                // Vernice vera: nessuna auto-illuminazione, riflessi realistici e trasparente lucido
                 mat.color?.set(tintHex);
-                mat.metalness = 0.14;
-                mat.roughness = 0.16;
+                mat.metalness = 0.05;
+                mat.roughness = 0.32;
                 if ('clearcoat' in mat) {
-                  mat.clearcoat = 1.0;
-                  mat.clearcoatRoughness = 0.04;
+                  mat.clearcoat = 0.9;
+                  mat.clearcoatRoughness = 0.08;
                 }
-                if (tintHex.toLowerCase() !== '#ffffff') {
-                  mat.emissive?.set(tintHex);
-                  mat.emissiveMap = null;
-                  mat.emissiveIntensity = 0.36;
-                } else if (/^Body$/i.test(mName) && mat.emissiveMap) {
-                  mat.emissiveIntensity = 0.0;
-                }
-                mat.envMapIntensity = 1.35;
+                if (mat.emissive) mat.emissive.setRGB(0, 0, 0);
+                mat.emissiveMap = null;
+                mat.emissiveIntensity = 0.0;
+                mat.envMapIntensity = 1.0;
                 mat.needsUpdate = true;
               } else if (/Glass/i.test(mName)) {
                 mat.metalness = 0.08;
@@ -545,23 +508,62 @@ export class MiniZCar {
     if (this.currentSetup) this.currentSetup.showNakedChassis = showNaked;
     const hasGlbWheels = this.glbWheelNodes.lf.length > 0;
     if (showNaked) {
-      // Mostra solo il telaio Kyosho Mini-Z completo con batterie ministilo, molle e motore
-      this.bodyGroup.visible = false;
+      // Sul Banco Lavoro: appoggia la carrozzeria 3D (senza ruote) sul tappetino verde davanti al telaio nudo, tutta ben visibile a sinistra!
+      if (this.onWorkbench) {
+        const pose = this.workbenchPose;
+        this.bodyGroup.visible = true;
+        this.bodyGroup.position.set(0.088, (pose.shellY ?? pose.y) - pose.y - 0.002, 0.035);
+        this.bodyGroup.rotation.set(0, -0.22, 0);
+        this.setGlbWheelsVisible(false);
+      } else {
+        this.bodyGroup.visible = false;
+        this.bodyGroup.position.set(0, 0, 0);
+        this.bodyGroup.rotation.set(0, 0, 0);
+        this.setGlbWheelsVisible(true);
+      }
       this.chassisGroup.visible = true;
       this.proceduralLightsGroup.visible = false;
       this.setChassisWheelsVisible(true);
     } else {
       // Con la carrozzeria montata, nasconde il telaio interno così le batterie AAA non sporgono mai dal cofano/tetto!
       this.bodyGroup.visible = true;
+      this.bodyGroup.position.set(0, 0, 0);
+      this.bodyGroup.rotation.set(0, 0, 0);
+      this.setGlbWheelsVisible(true);
       this.chassisGroup.visible = !hasGlbWheels;
       this.proceduralLightsGroup.visible = !hasGlbWheels;
       this.setChassisWheelsVisible(!hasGlbWheels);
     }
   }
 
+  setGlbWheelsVisible(visible) {
+    for (const key of ['lf', 'rf', 'lr', 'rr']) {
+      for (const w of this.glbWheelNodes[key] || []) w.steerPivot.visible = visible;
+    }
+  }
+
+  setWorkbenchMode(active, benchPose = null) {
+    this.onWorkbench = Boolean(active);
+    if (benchPose) this.workbenchPose = { ...this.workbenchPose, ...benchPose };
+    if (this.beamGroup) this.beamGroup.visible = !this.onWorkbench;
+    this.setNakedChassisMode(Boolean(this.currentSetup?.showNakedChassis));
+    this.syncVisuals(0.016);
+  }
+
+  refillBatteries() {
+    this.state.batteryPct = 100.0;
+    this.state.batteryVoltage = 5.60;
+  }
+
+  replaceTires() {
+    this.state.tireWearPct = 100.0;
+    this.state.tireTempC = 24.0;
+    this.state.tireGripFactor = 0.95;
+  }
+
   resetOnTrack(x, z, heading) {
     this.state.x = x;
-    this.state.y = 0.008;
+    this.state.y = this.trackSurfaceY + 0.008;
     this.state.z = z;
     this.state.vx = 0;
     this.state.vz = 0;
@@ -575,6 +577,10 @@ export class MiniZCar {
     this.state.pitch = 0;
     this.state.isFlipped = false;
     this.state.flipTimer = 0;
+    this.state.reverseLockTimer = 0;
+    if (this.skidPool) {
+      for (const m of this.skidPool) m.visible = false;
+    }
     this.syncVisuals(0.016);
   }
 
@@ -613,8 +619,8 @@ export class MiniZCar {
 
     const trackGrip = trackData?.gripMultiplier ?? 1.0;
 
-    // Angolo massimo delle ruote anteriori (~26 gradi reali, modulato dal Dual Rate del radiocomando)
-    const maxSteerRad = 0.46;
+    // Angolo massimo delle ruote anteriori (~25 gradi reali, modulato dal Dual Rate del radiocomando)
+    const maxSteerRad = 0.44;
     this.state.steerAngle = -input.steer * maxSteerRad;
 
     // Direzione longitudinale e laterale dell'auto
@@ -629,63 +635,147 @@ export class MiniZCar {
 
     // Velocità massima e accelerazione dal motore + pignone
     const topSpeed = motor.maxSpeedMs * pinion.speedMult * (bodySpec.aeroBonus ? 1 + (bodySpec.aeroBonus - 1) * 0.25 : 1);
-    const maxAccel = motor.accelMs2 * pinion.accelMult;
-
-    // Gestione Gas, Freno e Retromarcia
-    this.state.braking = input.brake > 0.08 && vForward > 0.15;
-
-    let driveAccel = 0;
-    if (input.throttle > 0.01) {
-      const speedRatio = Math.max(0, vForward / topSpeed);
-      const torqueCurve = Math.max(0.12, 1 - Math.pow(speedRatio, 1.45));
-      driveAccel += input.throttle * maxAccel * torqueCurve;
-    }
-
-    if (input.brake > 0.01) {
-      if (vForward > 0.08) {
-        // Frenata proporzionale all'EPA del radiocomando
-        driveAccel -= input.brake * 21.0;
-      } else {
-        // Retromarcia dolce
-        const revTop = topSpeed * 0.38;
-        if (vForward > -revTop) {
-          driveAccel -= input.brake * 7.5;
-        }
-      }
-    }
-
-    // Freno motore naturale quando rilasci il grilletto del gas
-    const drag = (2.1 * motor.motorBrake + Math.abs(vForward) * 0.45) * rearTire.dragFactor;
-    if (Math.abs(input.throttle) < 0.03 && Math.abs(input.brake) < 0.03) {
-      vForward -= Math.sign(vForward) * Math.min(Math.abs(vForward), drag * dt);
-    }
-
-    vForward += driveAccel * dt;
+    const maxAccel = motor.accelMs2 * pinion.accelMult * 0.78;
+    const drag = (2.2 * motor.motorBrake + Math.abs(vForward) * 0.55) * rearTire.dragFactor;
 
     // Calcolo tenuta laterale (Gomme Anteriori + Posteriori + Telaio RWD/AWD + Molle + T-Plate)
     const isDriftSetup = frontTire.id === 'front_drift_lf' || rearTire.id === 'rear_drift_lf';
     const frontGrip = frontTire.gripFront * chassis.turnInFactor * frontSpring.turnInBoost * trackGrip;
     const rearGrip = rearTire.gripRear * tPlate.exitTraction * diff.tractionStab * trackGrip;
 
-    // Rotazione in curva (Yaw rate)
-    const speedFactor = Math.min(1.0, Math.abs(vForward) / 0.65);
-    const turnResponsiveness = 11.2 * frontGrip * tPlate.responsiveness * diff.rotationEase;
-    const directionSign = vForward >= -0.05 ? 1 : -1;
-    const targetYawRate = this.state.steerAngle * turnResponsiveness * speedFactor * directionSign;
+    // GESTIONE PROPORZIONALE ESC KYOSHO ICS (Il grilletto regola direttamente la velocità target proporzionale, mai ON/OFF!)
+    this.state.braking = input.brake > 0.05 && vForward > 0.08;
+    let driveAccel = 0;
 
-    this.state.angularVel += (targetYawRate - this.state.angularVel) * Math.min(1, dt * 18);
+    const thr = clamp(input.throttle, 0, 1);
+    const brk = clamp(input.brake, 0, 1);
+
+    // 1. SIMULAZIONE REALE BATTERIE 4xAAA NiMH (800mAh Speed House):
+    // Scarica dipendente dagli Ampere assorbiti dal motore Brushless e calo di tensione sotto carico (Voltage Sag)
+    const motorPowerDraw = (motor.maxSpeedMs / 5.2) * (0.04 + 0.24 * thr * thr);
+    this.state.batteryPct = Math.max(0, (this.state.batteryPct ?? 100) - motorPowerDraw * dt);
+    const soc = this.state.batteryPct / 100;
+    // Curva di scarica reale 4 celle NiMH: 5.60V (picco carica) -> 4.95V (nominale) -> 4.10V (scarica)
+    const openCircuitV = 4.10 + 0.85 * Math.pow(soc, 0.45) + 0.65 * Math.pow(soc, 3.2);
+    const internalResSag = thr * (0.14 + (1 - soc) * 0.22);
+    this.state.batteryVoltage = Math.max(3.9, openCircuitV - internalResSag);
+    const batteryPowerFactor = clamp(this.state.batteryVoltage / 5.15, 0.65, 1.05);
+
+    // 2. SIMULAZIONE REALE GOMME (Temperatura d'esercizio 22°C-60°C & Usura mescola Shore 20°/30°/40°):
+    const compoundWearMult = frontTire.id.includes('20') ? 1.85 : frontTire.id.includes('40') ? 0.55 : 1.0;
+    const cornerEnergy = Math.abs(vLateral) * 1.6 + Math.abs(this.state.angularVel * vForward) * 0.42;
+    const tireWearRate = (0.015 * Math.abs(vForward) + 0.085 * cornerEnergy) * compoundWearMult;
+    if (Math.abs(vForward) > 0.1) {
+      this.state.tireWearPct = Math.max(0, (this.state.tireWearPct ?? 100) - tireWearRate * dt);
+    }
+    const ambientTemp = 23.0;
+    const heatGain = (cornerEnergy * 2.4 + thr * Math.abs(vForward) * 0.35) * compoundWearMult;
+    const cooling = ((this.state.tireTempC ?? 23) - ambientTemp) * (0.12 + Math.abs(vForward) * 0.04);
+    this.state.tireTempC = clamp((this.state.tireTempC ?? 23) + (heatGain - cooling) * dt, 22.0, 68.0);
+
+    // Finestra termica ottimale gomme Mini-Z su RCP: 34°C - 48°C = 100% grip; fredde = 89%; surriscaldate (>52°C) = scivolose!
+    let thermalGrip = 1.0;
+    if (this.state.tireTempC < 34) {
+      thermalGrip = 0.89 + 0.11 * ((this.state.tireTempC - 22) / 12);
+    } else if (this.state.tireTempC > 48) {
+      thermalGrip = Math.max(0.82, 1.0 - (this.state.tireTempC - 48) * 0.011);
+    }
+    const wearGrip = this.state.tireWearPct > 35 ? 1.0 : 0.68 + 0.32 * (this.state.tireWearPct / 35);
+    this.state.tireGripFactor = thermalGrip * wearGrip;
+
+    const effectiveTopSpeed = topSpeed * batteryPowerFactor;
+    const effectiveMaxAccel = maxAccel * batteryPowerFactor * this.state.tireGripFactor;
+
+    if (thr > 0.01) {
+      this.state.reverseLockTimer = 0.22;
+      // Curva progressiva: 25% grilletto = 25% velocità massima, 50% grilletto = 50% velocità massima!
+      const targetSpeed = thr * effectiveTopSpeed;
+      const speedDiff = targetSpeed - vForward;
+      if (speedDiff > 0) {
+        const spoolUp = (0.28 + 0.72 * thr) * clamp(speedDiff / (effectiveTopSpeed * 0.30), 0.14, 1.0);
+        driveAccel = spoolUp * effectiveMaxAccel;
+      } else {
+        // Freno motore proporzionale (back-EMF) quando parzializzi il grilletto in ingresso curva
+        driveAccel = -Math.min(Math.abs(speedDiff) * 5.5, drag * 1.45);
+      }
+    } else if (brk > 0.01) {
+      if (vForward > 0.06) {
+        // Frenata modulabile legata al grip reale delle gomme (Cerchio di aderenza)
+        this.state.reverseLockTimer = 0.24;
+        const progressiveBrake = Math.pow(brk, 1.38);
+        const maxBrakeDecel = 10.2 * (0.65 + 0.35 * rearGrip) * this.state.tireGripFactor;
+        driveAccel = -progressiveBrake * maxBrakeDecel;
+        if (vForward + driveAccel * dt < 0) {
+          driveAccel = -vForward / dt;
+        }
+      } else {
+        if ((this.state.reverseLockTimer || 0) > 0) {
+          this.state.reverseLockTimer -= dt;
+          vForward = 0;
+          driveAccel = 0;
+        } else {
+          const revTop = effectiveTopSpeed * 0.34 * brk;
+          if (vForward > -revTop) {
+            driveAccel = -Math.pow(brk, 1.3) * 4.8;
+          } else {
+            driveAccel = (-revTop - vForward) * 4.0;
+          }
+        }
+      }
+    } else {
+      if ((this.state.reverseLockTimer || 0) > 0) {
+        this.state.reverseLockTimer = Math.max(0, this.state.reverseLockTimer - dt);
+      }
+      if (Math.abs(vForward) > 0.005) {
+        driveAccel = -Math.sign(vForward) * Math.min(Math.abs(vForward) / dt, drag);
+      } else {
+        vForward = 0;
+      }
+    }
+
+    vForward += driveAccel * dt;
+
+    // 3. TENUTA IN CURVA REALE (Cerchio di aderenza + sottosterzo se entri troppo forte + ritorno caster immediato):
+    const isStickCentered = Math.abs(input.steer) < 0.05;
+    const effectiveFrontGrip = frontGrip * this.state.tireGripFactor;
+    const effectiveRearGrip = rearGrip * this.state.tireGripFactor;
+
+    // Riduce l'efficacia di sterzo se si entra in curva a velocità eccessiva rispetto al limite di tenuta anteriore (Sottosterzo reale!)
+    const speedRatio = Math.abs(vForward) / Math.max(3.5, effectiveTopSpeed);
+    const highSpeedUndersteer = 1.0 / (1.0 + Math.max(0, speedRatio - 0.55) * (1.35 / effectiveFrontGrip));
+    const speedFactor = Math.min(1.0, Math.abs(vForward) / 0.52);
+    const turnResponsiveness = 10.4 * effectiveFrontGrip * tPlate.responsiveness * diff.rotationEase * highSpeedUndersteer;
+    const directionSign = vForward >= -0.05 ? 1 : -1;
+    const targetYawRate = isStickCentered ? 0 : this.state.steerAngle * turnResponsiveness * speedFactor * directionSign;
+
+    const yawDampingRate = isStickCentered ? 48.0 : 24.0;
+    this.state.angularVel += (targetYawRate - this.state.angularVel) * Math.min(1, dt * yawDampingRate);
+    if (isStickCentered && Math.abs(this.state.angularVel) < 0.04) {
+      this.state.angularVel = 0;
+    }
     this.state.heading += this.state.angularVel * dt;
 
-    // Sovrasterzo di potenza / Drift quando si accelera forte in curva
-    const corneringLoad = Math.abs(this.state.angularVel * vForward);
-    if (isDriftSetup || (chassis.driveType === 'RWD' && input.throttle > 0.75 && rearGrip < 1.05)) {
-      const powerSlide = input.throttle * Math.sin(this.state.steerAngle) * (isDriftSetup ? 3.4 : 1.15);
+    // Forza centrifuga in curva: se superi il limite laterale delle gomme sul tappeto RCP, l'auto allarga la traiettoria!
+    const centripetalLoad = this.state.angularVel * vForward;
+    const maxLateralGripAccel = (isDriftSetup ? 5.5 : 13.8) * effectiveRearGrip * chassis.stabilityFactor;
+    if (Math.abs(centripetalLoad) > maxLateralGripAccel) {
+      const excessOutward = (Math.abs(centripetalLoad) - maxLateralGripAccel) * Math.sign(centripetalLoad) * 0.48;
+      vLateral -= excessOutward * dt;
+    }
+
+    // Sovrasterzo di potenza / Drift quando si spalanca il gas in curva con trazione posteriore RWD
+    if (!isStickCentered && (isDriftSetup || (chassis.driveType === 'RWD' && thr > 0.76 && effectiveRearGrip < 1.06))) {
+      const powerSlide = thr * Math.sin(this.state.steerAngle) * (isDriftSetup ? 3.2 : 1.15);
       vLateral -= powerSlide * dt;
     }
 
-    // Smorzamento scivolamento laterale in base al grip delle gomme posteriori
-    const lateralDamping = isDriftSetup ? 3.2 : 13.5 * rearGrip * chassis.stabilityFactor;
+    // Riallineamento laterale immediato quando raddrizzi lo stick
+    const baseLatDamp = isDriftSetup ? 4.2 : 16.5 * effectiveRearGrip * chassis.stabilityFactor;
+    const lateralDamping = isStickCentered ? baseLatDamp * 1.95 : baseLatDamp;
     vLateral -= vLateral * Math.min(1, lateralDamping * dt);
+    if (isStickCentered && Math.abs(vLateral) < 0.015) {
+      vLateral = 0;
+    }
 
     // Ricompone il vettore velocità nel mondo 3D
     const newFwdX = Math.sin(this.state.heading);
@@ -702,6 +792,21 @@ export class MiniZCar {
     // Avanza posizione
     this.state.x += this.state.vx * dt;
     this.state.z += this.state.vz * dt;
+
+    // Segni gomma dinamici sul tappeto RCP quando l'auto derapa o frena forte in curva
+    if ((this.state.slipAmount > 0.36 || (this.state.braking && Math.abs(vForward) > 1.8)) && this.skidPool?.length) {
+      for (const side of [-0.028, 0.028]) {
+        const mark = this.skidPool[this.skidCursor];
+        this.skidCursor = (this.skidCursor + 1) % this.skidPool.length;
+        mark.position.set(
+          this.state.x + newRightX * side - newFwdX * 0.045,
+          this.trackSurfaceY + 0.0095,
+          this.state.z + newRightZ * side - newFwdZ * 0.045
+        );
+        mark.rotation.y = this.state.heading;
+        mark.visible = true;
+      }
+    }
 
     // Rollio e Beccheggio realistici delle sospensioni Mini-Z (molla anteriore + T-Plate posteriore)
     const targetRoll =
@@ -750,21 +855,32 @@ export class MiniZCar {
   }
 
   syncVisuals() {
-    this.rootGroup.position.set(this.state.x, this.state.y, this.state.z);
-    this.rootGroup.rotation.y = this.state.heading;
+    if (this.onWorkbench) {
+      this.rootGroup.position.set(this.workbenchPose.x, this.workbenchPose.y, this.workbenchPose.z);
+      this.rootGroup.rotation.y = this.workbenchPose.heading;
+      this.sprungGroup.rotation.set(0, 0, 0);
+      this.sprungGroup.position.y = 0;
+    } else {
+      this.rootGroup.position.set(this.state.x, this.state.y, this.state.z);
+      this.rootGroup.rotation.y = this.state.heading;
+      this.sprungGroup.rotation.z = this.state.roll;
+      this.sprungGroup.rotation.x = this.state.pitch;
+      this.sprungGroup.position.y = this.state.isFlipped ? 0.032 : 0;
+    }
 
-    this.sprungGroup.rotation.z = this.state.roll;
-    this.sprungGroup.rotation.x = this.state.pitch;
-    this.sprungGroup.position.y = this.state.isFlipped ? 0.032 : 0;
+    if (this.rearBrakeGlow) {
+      this.rearBrakeGlow.visible = Boolean(this.state.braking && !this.onWorkbench);
+    }
 
-    // Ruote del telaio
+    // Ruote del telaio MR-04 (il fusello sterza, il gruppo interno "spin" rotola)
     if (this.chassisWheelMeshes.lf) {
-      this.chassisWheelMeshes.lf.rotation.y = this.state.steerAngle;
-      this.chassisWheelMeshes.rf.rotation.y = this.state.steerAngle;
-      this.chassisWheelMeshes.lf.children[0].rotation.x = this.state.wheelSpin;
-      this.chassisWheelMeshes.rf.children[0].rotation.x = this.state.wheelSpin;
-      this.chassisWheelMeshes.lr.children[0].rotation.x = this.state.wheelSpin;
-      this.chassisWheelMeshes.rr.children[0].rotation.x = this.state.wheelSpin;
+      const steerShown = this.onWorkbench ? 0 : this.state.steerAngle;
+      this.chassisWheelMeshes.lf.rotation.y = steerShown;
+      this.chassisWheelMeshes.rf.rotation.y = steerShown;
+      for (const key of ['lf', 'rf', 'lr', 'rr']) {
+        const spin = this.chassisWheelMeshes[key].userData.spin;
+        if (spin) spin.rotation.x = this.state.wheelSpin;
+      }
     }
 
     // Ruote del modello 3D GLB (es. Ferrari 499P) imperniate sul proprio mozzo
