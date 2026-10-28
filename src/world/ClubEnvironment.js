@@ -827,15 +827,24 @@ export class ClubEnvironment {
       carObj.root.scale.setScalar(1.16);
       this.aiCarsGroup.add(carObj.root);
 
+      const baseOffset = (i - 2) * 0.16;
       this.aiCars.push({
         driver: drv,
         carObj,
         t: (0.04 - i * 0.025 + 1) % 1,
-        laneOffset: (i - 2) * 0.16,
-        speed: 3.6 * (drv.pace || 1.0),
+        baseLaneOffset: baseOffset,
+        laneOffset: baseOffset,
+        targetLaneOffset: baseOffset,
+        speed: 2.8 * (drv.pace || 1.0),
         laps: 1,
         lapTime: 0,
-        bestLap: 6.45 + i * 0.12
+        lastLap: null,
+        bestLap: null,
+        errorState: 'none',
+        errorTimer: 0,
+        errorCooldown: 1.5 + i * 1.4,
+        yawSlip: 0,
+        rollAngle: 0
       });
     }
 
@@ -1284,9 +1293,82 @@ export class ClubEnvironment {
     this.trackGroup.add(bridgeGroup);
   }
 
-  // Scenografia in scala 1:27 nelle isole verdi interne della pista (cartelloni sponsor, postazione telemetria e pile di gomme)
+  // Crea la grafica ad alta definizione di un adesivo sponsor piatto (vinyl floor decal) incollato sul piano pista
+  createFlatSponsorStickerTex(spec) {
+    return canvasTex(512, 200, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+
+      // Bordo esterno fustellato bianco/argento tipico degli adesivi in vinile da pista RC
+      const r = 22;
+      const drawRoundRect = (x, y, rw, rh, rad) => {
+        g.beginPath();
+        g.moveTo(x + rad, y);
+        g.lineTo(x + rw - rad, y);
+        g.quadraticCurveTo(x + rw, y, x + rw, y + rad);
+        g.lineTo(x + rw, y + rh - rad);
+        g.quadraticCurveTo(x + rw, y + rh, x + rw - rad, y + rh);
+        g.lineTo(x + rad, y + rh);
+        g.quadraticCurveTo(x, y + rh, x, y + rh - rad);
+        g.lineTo(x, y + rad);
+        g.quadraticCurveTo(x, y, x + rad, y);
+        g.closePath();
+      };
+
+      drawRoundRect(4, 4, w - 8, h - 8, r);
+      g.fillStyle = '#dde3ec';
+      g.fill();
+
+      drawRoundRect(12, 12, w - 24, h - 24, r - 5);
+      g.fillStyle = spec.bg;
+      g.fill();
+
+      // Banda obliqua racing laterale
+      g.save();
+      drawRoundRect(12, 12, w - 24, h - 24, r - 5);
+      g.clip();
+      g.fillStyle = spec.accent;
+      g.beginPath();
+      g.moveTo(12, 12);
+      g.lineTo(138, 12);
+      g.lineTo(96, h - 12);
+      g.lineTo(12, h - 12);
+      g.closePath();
+      g.fill();
+
+      // Striscia secondaria sottile
+      g.fillStyle = spec.stripe || '#ffffff';
+      g.beginPath();
+      g.moveTo(146, 12);
+      g.lineTo(162, 12);
+      g.lineTo(120, h - 12);
+      g.lineTo(104, h - 12);
+      g.closePath();
+      g.fill();
+      g.restore();
+
+      // Sigla / Badge a sinistra
+      g.fillStyle = spec.badgeFg || '#ffffff';
+      g.font = `italic 900 44px ${B.FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(spec.badge, 68, h / 2 + 2);
+
+      // Nome principale dello Sponsor
+      g.fillStyle = spec.fg || '#ffffff';
+      g.font = `italic 900 54px ${B.FONT}`;
+      g.textAlign = 'left';
+      g.fillText(spec.title, 174, h / 2 - 14);
+
+      // Sottotitolo tecnico
+      g.fillStyle = spec.subColor || '#cbd5e1';
+      g.font = `700 22px ${B.FONT}`;
+      g.fillText(spec.sub, 176, h / 2 + 36);
+    }, { clamp: true });
+  }
+
+  // Sponsor piatti come veri adesivi in vinile incollati sul piano pista (ZERO cartelli 3D verticali!)
   buildInfieldScenery(samples, laneHalf) {
-    const minClearance = laneHalf + 0.32;
+    const minClearance = laneHalf + 0.34;
     const isFarFromTrack = (x, z, minDist = minClearance) => {
       const minSq = minDist * minDist;
       for (let i = 0; i < samples.length; i += 3) {
@@ -1299,39 +1381,70 @@ export class ClubEnvironment {
     };
 
     const sceneryGroup = new THREE.Group();
-    sceneryGroup.name = 'Scenografia Infield Mini-Z 1:27';
+    sceneryGroup.name = 'Adesivi Sponsor Piatti Mini-Z 1:27';
 
-    // 1. Cartelloni pubblicitari a bordo rettilineo in scala 1:27
-    const boardSpots = [
-      [0.4, -0.38, 0],
-      [1.8, -0.38, 0],
-      [3.2, -0.38, 0],
-      [4.6, -0.38, 0],
-      [1.2, -1.65, 0],
-      [3.7, -1.65, 0]
+    const stickerSpecs = [
+      { badge: 'KZ', title: 'KYOSHO', sub: 'OFFICIAL MINI-Z CUP 1:27', bg: '#181c24', accent: '#b91c1c', stripe: '#f8fafc', fg: '#f8fafc' },
+      { badge: 'PN', title: 'PN RACING', sub: 'WORLD CHAMPION TUNING', bg: '#152238', accent: '#d97706', stripe: '#f8fafc', fg: '#ffffff' },
+      { badge: 'SH', title: 'SPEED HOUSE', sub: 'X-SPEED 8500KV & AAA Ni-MH', bg: '#171920', accent: '#0284c7', stripe: '#eab308', fg: '#f8fafc' },
+      { badge: 'MK', title: 'MARKA', sub: 'PRO RADIAL SLICK TIRES', bg: '#1c1917', accent: '#c2410c', stripe: '#f8fafc', fg: '#ffffff' },
+      { badge: 'GL', title: 'GL RACING', sub: 'CARBON CHASSIS SERIES', bg: '#172554', accent: '#2563eb', stripe: '#93c5fd', fg: '#ffffff' },
+      { badge: 'KO', title: 'KO PROPO', sub: 'EX-NEXT 2.4GHz TELEMETRY', bg: '#18181b', accent: '#991b1b', stripe: '#d4d4d8', fg: '#ffffff' },
+      { badge: 'AT', title: 'ATOMIC RC', sub: 'PRECISION METAL UPGRADES', bg: '#14261c', accent: '#15803d', stripe: '#86efac', fg: '#f8fafc' },
+      { badge: 'RCP', title: 'RCP TRACK', sub: 'HIGH-GRIP EVA FOAM SYSTEM', bg: '#1e242d', accent: '#b91c1c', stripe: '#e2e8f0', fg: '#f8fafc' }
     ];
-    boardSpots.forEach(([bx, bz, ry], idx) => {
-      if (!isFarFromTrack(bx, bz, laneHalf + 0.18)) return;
-      const b = B.BRANDS[idx % B.BRANDS.length];
-      const backing = new THREE.Mesh(
-        new THREE.BoxGeometry(0.42, 0.055, 0.010),
-        this.M.darkMetal
-      );
-      backing.position.set(bx, 0.032, bz);
-      backing.rotation.y = ry;
-      backing.castShadow = true;
 
-      const boardMat = new THREE.MeshStandardMaterial({ map: B.brandBoard(b, 512, 64), roughness: 0.45 });
-      const faceFront = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.048), boardMat);
-      faceFront.position.set(bx, 0.032, bz + 0.006);
-      faceFront.rotation.y = ry;
+    // Posizioni candidate sul piano del tavolo (sceglie automaticamente quelle libere fuori dalle corsie di ciascuna pista)
+    const candidateSpots = [
+      [0.35, -0.45,  0.04],
+      [2.45, -0.45,  0.00],
+      [4.55, -0.45, -0.04],
+      [1.10, -1.65, -0.06],
+      [3.85, -1.65,  0.05],
+      [2.45, -2.25,  0.00],
+      [5.15, -2.15, -0.08],
+      [-0.25, -2.15, 0.08],
+      [2.45, -3.15,  0.00],
+      [4.55, -3.05,  0.05],
+      [0.45, -3.05, -0.05]
+    ];
 
-      const faceBack = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.048), boardMat);
-      faceBack.position.set(bx, 0.032, bz - 0.006);
-      faceBack.rotation.y = ry + Math.PI;
+    const placed = [];
+    for (let i = 0; i < candidateSpots.length; i++) {
+      const [sx, sz, rotZ] = candidateSpots[i];
+      if (!isFarFromTrack(sx, sz, laneHalf + 0.34)) continue;
+      let tooCloseToOther = false;
+      for (const p of placed) {
+        if ((p[0] - sx) ** 2 + (p[1] - sz) ** 2 < 1.35 * 1.35) {
+          tooCloseToOther = true;
+          break;
+        }
+      }
+      if (tooCloseToOther) continue;
 
-      sceneryGroup.add(backing, faceFront, faceBack);
-    });
+      const spec = stickerSpecs[placed.length % stickerSpecs.length];
+      const tex = this.createFlatSponsorStickerTex(spec);
+      const stickerMat = new THREE.MeshStandardMaterial({
+        map: tex,
+        roughness: 0.42,
+        metalness: 0.04,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2
+      });
+
+      const stickerMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.76, 0.30), stickerMat);
+      stickerMesh.rotation.x = -Math.PI / 2;
+      stickerMesh.rotation.z = rotZ;
+      // Appoggiato piatto come un vero adesivo sul tappeto del tavolo (y = 0.0018m)
+      stickerMesh.position.set(sx, 0.0018, sz);
+      stickerMesh.receiveShadow = true;
+      stickerMesh.castShadow = false;
+      sceneryGroup.add(stickerMesh);
+
+      placed.push([sx, sz]);
+      if (placed.length >= 6) break;
+    }
 
     this.trackGroup.add(sceneryGroup);
   }
@@ -1479,36 +1592,130 @@ export class ClubEnvironment {
     }
 
     if (this.curve && this.aiCars.length > 0 && this.aiLevel !== 'none') {
-      // Velocità IA perfettamente rapportate alle prestazioni reali Mini-Z 1:27 su pista RCP:
-      // Principiante (~10 km/h max), Club (~13 km/h max), Esperto (~15.5 km/h max), Campione Kyosho Cup (~18 km/h max)
+      // Fisica e prestazioni IA identiche alle vere Mini-Z 1:27 su pista RCP, con veri errori umani in base al livello!
+      // Principiante (~11.5 km/h, errori frequenti), Club (~14.5 km/h, qualche largo/scodata), Esperto (~17 km/h, errori rari), Pro (~19.5 km/h, precisissimo)
       const levelParams = {
-        beginner: { top: 2.75, min: 1.15, cornerBrk: 6.2 },
-        club:     { top: 3.55, min: 1.48, cornerBrk: 5.5 },
-        expert:   { top: 4.30, min: 1.82, cornerBrk: 4.9 },
-        pro:      { top: 5.05, min: 2.15, cornerBrk: 4.3 }
-      }[this.aiLevel] || { top: 3.55, min: 1.48, cornerBrk: 5.5 };
+        beginner: { top: 3.20, min: 1.15, latGrip: 3.1, accel: 4.5, brake: 5.2, errProb: 0.95, errDur: 1.35 },
+        club:     { top: 4.05, min: 1.45, latGrip: 4.2, accel: 5.8, brake: 6.0, errProb: 0.48, errDur: 1.10 },
+        expert:   { top: 4.75, min: 1.78, latGrip: 5.4, accel: 7.2, brake: 6.6, errProb: 0.22, errDur: 0.85 },
+        pro:      { top: 5.45, min: 2.08, latGrip: 6.6, accel: 8.6, brake: 7.2, errProb: 0.08, errDur: 0.65 }
+      }[this.aiLevel] || { top: 4.05, min: 1.45, latGrip: 4.2, accel: 5.8, brake: 6.0, errProb: 0.48, errDur: 1.10 };
+
+      const trackLen = Math.max(12, this.totalTrackLength);
+      const laneHalf = (this.activeTrackSpec?.laneWidth || 0.80) * 0.5;
+      const maxSafeOffset = Math.max(0.14, laneHalf - 0.075);
 
       for (let i = 0; i < this.aiCars.length; i++) {
         const ai = this.aiCars[i];
-        const tNext = (ai.t + 0.025) % 1;
+        const dsLook = 0.48; // Guarda 48 cm avanti per impostare la staccata prima della curva
+        const dtLook = dsLook / trackLen;
+        const tAhead = (ai.t + dtLook) % 1;
+        const tNear = (ai.t + 0.015) % 1;
+
         const tanNow = this.curve.getTangentAt(ai.t);
-        const tanAhead = this.curve.getTangentAt(tNext);
-        const curvature = tanNow.angleTo(tanAhead);
-        const targetSpeed = clamp(
-          (levelParams.top - curvature * levelParams.cornerBrk) * (ai.driver.pace || 1.0),
+        const tanNear = this.curve.getTangentAt(tNear);
+        const tanAhead = this.curve.getTangentAt(tAhead);
+
+        const angleAhead = tanNow.angleTo(tanAhead);
+        const angleNow = tanNow.angleTo(tanNear);
+        // Segno della curva (+1 destra, -1 sinistra)
+        const crossSign = Math.sign(tanNow.x * tanAhead.z - tanNow.z * tanAhead.x) || 1;
+
+        // Raggio di curvatura reale R = ds / dTheta -> velocità massima fisica in curva v = sqrt(a_lat * R)
+        const radiusAhead = dsLook / Math.max(0.015, angleAhead);
+        const radiusNow = (0.015 * trackLen) / Math.max(0.01, angleNow);
+        const effRadius = Math.min(radiusAhead, radiusNow * 1.1);
+        const cornerMaxSpeed = Math.sqrt(levelParams.latGrip * effRadius);
+
+        // Gestione errori realistici dell'IA in staccata e a centro curva
+        if (ai.errorCooldown > 0) ai.errorCooldown -= dt;
+
+        if (ai.errorState === 'none') {
+          // Quando l'IA entra in una curva impegnativa può commettere un errore umano!
+          if (angleAhead > 0.24 && ai.errorCooldown <= 0 && Math.random() < levelParams.errProb * dt * 1.8) {
+            const roll = Math.random();
+            if (roll < 0.46) {
+              // 1. Arriva lungo in staccata e allarga verso la sponda esterna!
+              ai.errorState = 'late_brake';
+              ai.errorTimer = levelParams.errDur * (0.85 + Math.random() * 0.35);
+              ai.targetLaneOffset = clamp(-crossSign * maxSafeOffset * 0.96, -maxSafeOffset, maxSafeOffset);
+            } else if (roll < 0.82) {
+              // 2. Scodata di potenza in uscita di curva con controsterzo e perdita di trazione!
+              ai.errorState = 'oversteer_wiggle';
+              ai.errorTimer = levelParams.errDur * 0.85;
+              ai.targetLaneOffset = clamp(ai.baseLaneOffset + (Math.random() - 0.5) * 0.24, -maxSafeOffset, maxSafeOffset);
+            } else {
+              // 3. Pizzica il cordolo interno scomponendo l'assetto!
+              ai.errorState = 'curb_touch';
+              ai.errorTimer = levelParams.errDur * 0.75;
+              ai.targetLaneOffset = clamp(crossSign * maxSafeOffset * 0.92, -maxSafeOffset, maxSafeOffset);
+            }
+            ai.errorCooldown = 3.2 + Math.random() * 4.0;
+            this.onAiMistake?.(ai.driver.name, ai.errorState);
+          } else {
+            // Traiettoria ideale da gara (stringe leggermente alla corda interna in curva)
+            const racingApexOffset = angleNow > 0.08 ? crossSign * 0.09 : 0;
+            ai.targetLaneOffset = clamp(ai.baseLaneOffset + racingApexOffset, -maxSafeOffset * 0.82, maxSafeOffset * 0.82);
+          }
+        } else {
+          ai.errorTimer -= dt;
+          if (ai.errorTimer <= 0) {
+            ai.errorState = 'none';
+            ai.targetLaneOffset = ai.baseLaneOffset;
+          }
+        }
+
+        // Calcolo velocità target con eventuale penalità durante l'errore
+        let targetSpeed = clamp(
+          Math.min(levelParams.top, cornerMaxSpeed) * (ai.driver.pace || 1.0),
           levelParams.min,
           levelParams.top
         );
-        ai.speed += (targetSpeed - ai.speed) * Math.min(1, dt * 5);
+
+        if (ai.errorState === 'late_brake') {
+          // All'inizio frena tardi, poi deve rallentare forte per non sbattere!
+          targetSpeed *= ai.errorTimer > levelParams.errDur * 0.55 ? 1.08 : 0.58;
+        } else if (ai.errorState === 'oversteer_wiggle') {
+          targetSpeed *= 0.64;
+        } else if (ai.errorState === 'curb_touch') {
+          targetSpeed *= 0.70;
+        }
+
+        // Rispetta i veri limiti fisici di accelerazione e frenata (mai variazioni istantanee!)
+        if (targetSpeed > ai.speed) {
+          ai.speed = Math.min(targetSpeed, ai.speed + levelParams.accel * dt);
+        } else {
+          ai.speed = Math.max(targetSpeed, ai.speed - levelParams.brake * dt);
+        }
 
         const prevT = ai.t;
-        ai.t = (ai.t + (ai.speed * dt) / Math.max(8, this.totalTrackLength)) % 1;
+        ai.t = (ai.t + (ai.speed * dt) / trackLen) % 1;
         ai.lapTime += dt;
         if (ai.t < prevT) {
           ai.laps++;
-          if (ai.lapTime > 4.0) ai.bestLap = Math.min(ai.bestLap, ai.lapTime);
+          if (ai.lapTime > 3.8) {
+            ai.lastLap = ai.lapTime;
+            ai.bestLap = ai.bestLap ? Math.min(ai.bestLap, ai.lapTime) : ai.lapTime;
+          }
           ai.lapTime = 0;
         }
+
+        // Spostamento laterale fluido in corsia (e scarto rapido quando commette un errore)
+        const latRate = ai.errorState === 'none' ? 2.8 : 4.2;
+        ai.laneOffset += (ai.targetLaneOffset - ai.laneOffset) * Math.min(1, dt * latRate);
+
+        // Angolo di imbardata extra (scodata/controsterzo visibile quando sbaglia)
+        let targetYawSlip = 0;
+        let targetRoll = 0;
+        if (ai.errorState === 'oversteer_wiggle') {
+          targetYawSlip = Math.sin(timeSec * 18 + i) * 0.28;
+        } else if (ai.errorState === 'late_brake') {
+          targetYawSlip = -crossSign * 0.16;
+        } else if (ai.errorState === 'curb_touch') {
+          targetRoll = crossSign * 0.14;
+        }
+        ai.yawSlip += (targetYawSlip - ai.yawSlip) * Math.min(1, dt * 12);
+        ai.rollAngle += (targetRoll - ai.rollAngle) * Math.min(1, dt * 14);
 
         const pt = this.curve.getPointAt(ai.t);
         const tan = this.curve.getTangentAt(ai.t).normalize();
@@ -1516,7 +1723,7 @@ export class ClubEnvironment {
         const worldPos = pt.clone().addScaledVector(normal, ai.laneOffset);
 
         ai.carObj.root.position.set(worldPos.x, 0.008, worldPos.z);
-        ai.carObj.root.rotation.y = Math.atan2(-tan.z, tan.x);
+        ai.carObj.root.rotation.set(ai.rollAngle, Math.atan2(-tan.z, tan.x) + ai.yawSlip, 0);
 
         for (const w of ai.carObj.wheels) {
           w.g.rotation.z -= (ai.speed * dt) / w.r;

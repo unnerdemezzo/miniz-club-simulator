@@ -344,16 +344,52 @@ class MiniZSimulatorApp {
       this.refreshGamepadDeviceSelect();
     });
 
-    // Scheda 1: Piste RCP, livello avversari IA e inversione direzione
+    // Scheda 1: Piste RCP, livello avversari IA (con pulsanti rapidi in alto + menu) e inversione direzione
     const aiSel = document.getElementById('sel-ai-difficulty');
-    if (aiSel) {
-      aiSel.value = this.profileManager.state.aiLevel || 'club';
-      aiSel.addEventListener('change', (e) => {
-        const lvl = e.target.value;
-        this.profileManager.state.aiLevel = lvl;
-        this.profileManager.save();
-        this.club?.setAiDifficulty(lvl);
+    const syncAiButtons = (lvl) => {
+      if (aiSel) aiSel.value = lvl;
+      document.querySelectorAll('.ai-mode-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.ai === lvl);
       });
+    };
+    const applyAiLevel = (lvl, speakIt = false) => {
+      this.profileManager.state.aiLevel = lvl;
+      this.profileManager.save();
+      this.club?.setAiDifficulty(lvl);
+      syncAiButtons(lvl);
+      if (speakIt) {
+        const labels = {
+          none: 'Pista libera senza avversari!',
+          beginner: 'Avversari impostati su livello Principiante: commettono spesso errori in staccata.',
+          club: 'Avversari impostati su livello Club Amatoriale.',
+          expert: 'Avversari impostati su livello Esperto Nazionale.',
+          pro: 'Avversari impostati su livello Campione Pro!'
+        };
+        this.sound.speak(labels[lvl] || 'Livello avversari aggiornato.', 'normal');
+      }
+    };
+    syncAiButtons(this.profileManager.state.aiLevel || 'club');
+    if (aiSel) {
+      aiSel.addEventListener('change', (e) => applyAiLevel(e.target.value, true));
+    }
+    document.querySelectorAll('.ai-mode-btn').forEach((btn) => {
+      btn.addEventListener('click', () => applyAiLevel(btn.dataset.ai, true));
+    });
+
+    if (this.club) {
+      this.lastAiMistakeAnnounce = 0;
+      this.club.onAiMistake = (driverName, errType) => {
+        const now = performance.now();
+        if (now - this.lastAiMistakeAnnounce < 9500) return;
+        this.lastAiMistakeAnnounce = now;
+        const msg =
+          errType === 'late_brake'
+            ? `Attenzione! ${driverName} arriva lungo in staccata e allarga verso la sponda!`
+            : errType === 'oversteer_wiggle'
+              ? `Sbavatura di ${driverName} in uscita di curva: scoda e deve correggere di sterzo!`
+              : `${driverName} pizzica il cordolo interno e perde velocità!`;
+        this.sound.speak(msg, 'low');
+      };
     }
 
     document.getElementById('chk-reverse-track')?.addEventListener('change', (e) => {

@@ -84,30 +84,11 @@ export class MiniZCar {
     this.buildHeadlightBeamsAndSkids();
   }
 
-  // Segni gomma dinamici in derapata sul tappeto RCP (senza coni/triangoli finti davanti all'auto!)
+  // Nessun segno nero o cono finto sulla pista (tappeto RCP sempre pulito!)
   buildHeadlightBeamsAndSkids() {
     this.beamGroup = new THREE.Group();
     this.rearBrakeGlow = null;
-
-    // Pool leggero di segni gomma lasciati in curva/drift sul tappeto RCP (zero impatto sugli FPS)
-    this.skidGroup = new THREE.Group();
-    this.scene.add(this.skidGroup);
-    this.skidPool = [];
-    this.skidCursor = 0;
-    const skidGeo = new THREE.PlaneGeometry(0.014, 0.036);
-    skidGeo.rotateX(-Math.PI / 2);
-    const skidMat = new THREE.MeshBasicMaterial({
-      color: 0x111318,
-      transparent: true,
-      opacity: 0.38,
-      depthWrite: false
-    });
-    for (let i = 0; i < 90; i++) {
-      const m = new THREE.Mesh(skidGeo, skidMat);
-      m.visible = false;
-      this.skidGroup.add(m);
-      this.skidPool.push(m);
-    }
+    this.skidPool = null;
   }
 
   // Costruisce il vero telaio Kyosho Mini-Z MR-04 EVO2 (vasca, 4 celle AAA, scheda ICS, kingpin, motore, differenziale, ruote a razze)
@@ -532,9 +513,6 @@ export class MiniZCar {
     this.state.isFlipped = false;
     this.state.flipTimer = 0;
     this.state.reverseLockTimer = 0;
-    if (this.skidPool) {
-      for (const m of this.skidPool) m.visible = false;
-    }
     this.syncVisuals(0.016);
   }
 
@@ -742,24 +720,9 @@ export class MiniZCar {
     this.state.lateralSpeed = vLateral;
     this.state.slipAmount = Math.min(1.5, Math.abs(vLateral) / Math.max(0.4, Math.abs(vForward)));
 
-    // Avanza posizione
+    // Avanza posizione (nessun segno nero lasciato sulla pista!)
     this.state.x += this.state.vx * dt;
     this.state.z += this.state.vz * dt;
-
-    // Segni gomma dinamici sul tappeto RCP quando l'auto derapa o frena forte in curva
-    if ((this.state.slipAmount > 0.36 || (this.state.braking && Math.abs(vForward) > 1.8)) && this.skidPool?.length) {
-      for (const side of [-0.028, 0.028]) {
-        const mark = this.skidPool[this.skidCursor];
-        this.skidCursor = (this.skidCursor + 1) % this.skidPool.length;
-        mark.position.set(
-          this.state.x + newRightX * side - newFwdX * 0.045,
-          this.trackSurfaceY + 0.0095,
-          this.state.z + newRightZ * side - newFwdZ * 0.045
-        );
-        mark.rotation.y = this.state.heading;
-        mark.visible = true;
-      }
-    }
 
     // Rollio e Beccheggio realistici delle sospensioni Mini-Z (molla anteriore + T-Plate posteriore)
     const targetRoll =

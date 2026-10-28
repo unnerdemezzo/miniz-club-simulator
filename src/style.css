@@ -259,8 +259,8 @@ body, html {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-wrap: nowrap;
   pointer-events: none;
 }
 
@@ -270,27 +270,29 @@ body, html {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
 }
 
 .brand-cluster {
   background: rgba(11, 15, 25, 0.86);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  padding: 6px 14px 6px 8px;
+  padding: 6px 11px 6px 8px;
   border-radius: 12px;
+  min-width: 0;
 }
 
 .hud-mini-icon {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 9px;
   object-fit: cover;
   border: 1.5px solid #e11d48;
+  flex-shrink: 0;
 }
 
 .hud-title {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 900;
   letter-spacing: 0.7px;
   color: #ffffff;
@@ -300,20 +302,25 @@ body, html {
   font-size: 11px;
   color: #38bdf8;
   font-weight: 600;
+  max-width: 245px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* RIQUADRINI VERSIONE, 3 MODALITÀ RISOLUZIONE, FPS */
+/* RIQUADRINI VERSIONE, 3 MODALITÀ RISOLUZIONE, ABILITÀ IA, FPS */
 .hud-box {
   background: rgba(11, 15, 25, 0.88);
   backdrop-filter: blur(10px);
   border: 1.5px solid rgba(148, 163, 184, 0.28);
   border-radius: 11px;
-  padding: 5px 11px;
+  padding: 4px 9px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
+  min-height: 46px;
+  flex-shrink: 0;
 }
 
 .box-label {
@@ -344,7 +351,8 @@ body, html {
   gap: 5px;
 }
 
-.res-mode-btn {
+.res-mode-btn,
+.ai-mode-btn {
   background: rgba(30, 41, 59, 0.85);
   border: 1.5px solid rgba(148, 163, 184, 0.25);
   color: #cbd5e1;
@@ -356,17 +364,26 @@ body, html {
   transition: all 0.15s ease;
 }
 
-.res-mode-btn:hover {
+.res-mode-btn:hover,
+.ai-mode-btn:hover {
   border-color: #f8fafc;
   color: #ffffff;
 }
 
-/* Riquadrino evidenziato che indica quale risoluzione grafica è selezionata */
+/* Riquadrino evidenziato che indica quale risoluzione grafica o abilità IA è selezionata */
 .res-mode-btn.active {
   background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
   border: 2px solid #fda4af;
   color: #ffffff;
   box-shadow: 0 0 12px rgba(225, 29, 72, 0.65);
+  transform: scale(1.03);
+}
+
+.ai-mode-btn.active {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border: 2px solid #7dd3fc;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(2, 132, 199, 0.65);
   transform: scale(1.03);
 }
 
@@ -402,12 +419,13 @@ body, html {
   background: rgba(15, 23, 42, 0.9);
   border: 1.5px solid rgba(148, 163, 184, 0.35);
   color: #f8fafc;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 800;
-  padding: 10px 15px;
+  padding: 9px 12px;
   border-radius: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .hud-action-btn:hover {
