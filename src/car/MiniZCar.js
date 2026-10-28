@@ -84,61 +84,10 @@ export class MiniZCar {
     this.buildHeadlightBeamsAndSkids();
   }
 
-  // Fasci luminosi LED realistici proiettati sul tappeto RCP + segni gomma dinamici in derapata
+  // Segni gomma dinamici in derapata sul tappeto RCP (senza coni/triangoli finti davanti all'auto!)
   buildHeadlightBeamsAndSkids() {
     this.beamGroup = new THREE.Group();
-    const beamCanvas = document.createElement('canvas');
-    beamCanvas.width = 128;
-    beamCanvas.height = 256;
-    const ctx = beamCanvas.getContext('2d');
-    const grad = ctx.createRadialGradient(64, 240, 4, 64, 90, 120);
-    grad.addColorStop(0, 'rgba(220, 242, 255, 0.55)');
-    grad.addColorStop(0.45, 'rgba(186, 230, 253, 0.22)');
-    grad.addColorStop(1, 'rgba(186, 230, 253, 0.0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 128, 256);
-
-    const beamTex = new THREE.CanvasTexture(beamCanvas);
-    const beamMat = new THREE.MeshBasicMaterial({
-      map: beamTex,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    });
-
-    const leftBeam = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.28), beamMat);
-    leftBeam.rotation.x = -Math.PI / 2;
-    leftBeam.position.set(0.024, 0.002, 0.21);
-
-    const rightBeam = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.28), beamMat);
-    rightBeam.rotation.x = -Math.PI / 2;
-    rightBeam.position.set(-0.024, 0.002, 0.21);
-
-    // Alone rosso posteriore stop LED sul tappeto RCP in frenata
-    const brakeCanvas = document.createElement('canvas');
-    brakeCanvas.width = 128;
-    brakeCanvas.height = 128;
-    const bctx = brakeCanvas.getContext('2d');
-    const bgrad = bctx.createRadialGradient(64, 64, 4, 64, 64, 60);
-    bgrad.addColorStop(0, 'rgba(255, 20, 40, 0.65)');
-    bgrad.addColorStop(1, 'rgba(255, 20, 40, 0.0)');
-    bctx.fillStyle = bgrad;
-    bctx.fillRect(0, 0, 128, 128);
-    this.rearBrakeGlow = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.14, 0.10),
-      new THREE.MeshBasicMaterial({
-        map: new THREE.CanvasTexture(brakeCanvas),
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      })
-    );
-    this.rearBrakeGlow.rotation.x = -Math.PI / 2;
-    this.rearBrakeGlow.position.set(0, 0.002, -0.11);
-    this.rearBrakeGlow.visible = false;
-
-    this.beamGroup.add(leftBeam, rightBeam, this.rearBrakeGlow);
-    this.rootGroup.add(this.beamGroup);
+    this.rearBrakeGlow = null;
 
     // Pool leggero di segni gomma lasciati in curva/drift sul tappeto RCP (zero impatto sugli FPS)
     this.skidGroup = new THREE.Group();
@@ -263,18 +212,23 @@ export class MiniZCar {
               if (mat.map) mat.map.anisotropy = 8;
 
               if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
-                // Vernice vera: nessuna auto-illuminazione, riflessi realistici e trasparente lucido
-                mat.color?.set(tintHex);
+                // Vernice vera con saturazione leggermente attenuata per il massimo fotorealismo
+                if (mat.color) {
+                  mat.color.set(tintHex);
+                  const hsl = { h: 0, s: 0, l: 0 };
+                  mat.color.getHSL(hsl);
+                  mat.color.setHSL(hsl.h, hsl.s * 0.78, hsl.l * 0.94);
+                }
                 mat.metalness = 0.05;
-                mat.roughness = 0.32;
+                mat.roughness = 0.34;
                 if ('clearcoat' in mat) {
-                  mat.clearcoat = 0.9;
-                  mat.clearcoatRoughness = 0.08;
+                  mat.clearcoat = 0.85;
+                  mat.clearcoatRoughness = 0.09;
                 }
                 if (mat.emissive) mat.emissive.setRGB(0, 0, 0);
                 mat.emissiveMap = null;
                 mat.emissiveIntensity = 0.0;
-                mat.envMapIntensity = 1.0;
+                mat.envMapIntensity = 0.92;
                 mat.needsUpdate = true;
               } else if (/Glass/i.test(mName)) {
                 mat.metalness = 0.08;
@@ -619,8 +573,8 @@ export class MiniZCar {
 
     const trackGrip = trackData?.gripMultiplier ?? 1.0;
 
-    // Angolo massimo delle ruote anteriori (~25 gradi reali, modulato dal Dual Rate del radiocomando)
-    const maxSteerRad = 0.44;
+    // Angolo massimo delle ruote anteriori (~20 gradi reali con riduzione automatica ad alta velocità per evitare scatti nervosi sul rettilineo!)
+    const maxSteerRad = 0.34;
     this.state.steerAngle = -input.steer * maxSteerRad;
 
     // Direzione longitudinale e laterale dell'auto
@@ -633,17 +587,17 @@ export class MiniZCar {
     let vForward = this.state.vx * fwdX + this.state.vz * fwdZ;
     let vLateral = this.state.vx * rightX + this.state.vz * rightZ;
 
-    // Velocità massima e accelerazione dal motore + pignone
-    const topSpeed = motor.maxSpeedMs * pinion.speedMult * (bodySpec.aeroBonus ? 1 + (bodySpec.aeroBonus - 1) * 0.25 : 1);
-    const maxAccel = motor.accelMs2 * pinion.accelMult * 0.78;
-    const drag = (2.2 * motor.motorBrake + Math.abs(vForward) * 0.55) * rearTire.dragFactor;
+    // Velocità massima e accelerazione reali in scala 1:27 dal motore + pignone
+    const topSpeed = motor.maxSpeedMs * pinion.speedMult * (bodySpec.aeroBonus ? 1 + (bodySpec.aeroBonus - 1) * 0.18 : 1);
+    const maxAccel = motor.accelMs2 * pinion.accelMult;
+    const drag = (1.65 * motor.motorBrake + Math.abs(vForward) * 0.42) * rearTire.dragFactor;
 
     // Calcolo tenuta laterale (Gomme Anteriori + Posteriori + Telaio RWD/AWD + Molle + T-Plate)
     const isDriftSetup = frontTire.id === 'front_drift_lf' || rearTire.id === 'rear_drift_lf';
     const frontGrip = frontTire.gripFront * chassis.turnInFactor * frontSpring.turnInBoost * trackGrip;
     const rearGrip = rearTire.gripRear * tPlate.exitTraction * diff.tractionStab * trackGrip;
 
-    // GESTIONE PROPORZIONALE ESC KYOSHO ICS (Il grilletto regola direttamente la velocità target proporzionale, mai ON/OFF!)
+    // GESTIONE PROPORZIONALE ESC KYOSHO ICS (Il grilletto regola con fluidità la coppia e la velocità target, MAI on/off!)
     this.state.braking = input.brake > 0.05 && vForward > 0.08;
     let driveAccel = 0;
 
@@ -651,59 +605,57 @@ export class MiniZCar {
     const brk = clamp(input.brake, 0, 1);
 
     // 1. SIMULAZIONE REALE BATTERIE 4xAAA NiMH (800mAh Speed House):
-    // Scarica dipendente dagli Ampere assorbiti dal motore Brushless e calo di tensione sotto carico (Voltage Sag)
-    const motorPowerDraw = (motor.maxSpeedMs / 5.2) * (0.04 + 0.24 * thr * thr);
+    const motorPowerDraw = (motor.maxSpeedMs / 5.0) * (0.035 + 0.20 * thr * thr);
     this.state.batteryPct = Math.max(0, (this.state.batteryPct ?? 100) - motorPowerDraw * dt);
     const soc = this.state.batteryPct / 100;
-    // Curva di scarica reale 4 celle NiMH: 5.60V (picco carica) -> 4.95V (nominale) -> 4.10V (scarica)
     const openCircuitV = 4.10 + 0.85 * Math.pow(soc, 0.45) + 0.65 * Math.pow(soc, 3.2);
     const internalResSag = thr * (0.14 + (1 - soc) * 0.22);
     this.state.batteryVoltage = Math.max(3.9, openCircuitV - internalResSag);
-    const batteryPowerFactor = clamp(this.state.batteryVoltage / 5.15, 0.65, 1.05);
+    const batteryPowerFactor = clamp(this.state.batteryVoltage / 5.15, 0.68, 1.04);
 
     // 2. SIMULAZIONE REALE GOMME (Temperatura d'esercizio 22°C-60°C & Usura mescola Shore 20°/30°/40°):
-    const compoundWearMult = frontTire.id.includes('20') ? 1.85 : frontTire.id.includes('40') ? 0.55 : 1.0;
-    const cornerEnergy = Math.abs(vLateral) * 1.6 + Math.abs(this.state.angularVel * vForward) * 0.42;
-    const tireWearRate = (0.015 * Math.abs(vForward) + 0.085 * cornerEnergy) * compoundWearMult;
+    const compoundWearMult = frontTire.id.includes('20') ? 1.75 : frontTire.id.includes('40') ? 0.55 : 1.0;
+    const cornerEnergy = Math.abs(vLateral) * 1.4 + Math.abs(this.state.angularVel * vForward) * 0.35;
+    const tireWearRate = (0.012 * Math.abs(vForward) + 0.065 * cornerEnergy) * compoundWearMult;
     if (Math.abs(vForward) > 0.1) {
       this.state.tireWearPct = Math.max(0, (this.state.tireWearPct ?? 100) - tireWearRate * dt);
     }
     const ambientTemp = 23.0;
-    const heatGain = (cornerEnergy * 2.4 + thr * Math.abs(vForward) * 0.35) * compoundWearMult;
+    const heatGain = (cornerEnergy * 2.1 + thr * Math.abs(vForward) * 0.30) * compoundWearMult;
     const cooling = ((this.state.tireTempC ?? 23) - ambientTemp) * (0.12 + Math.abs(vForward) * 0.04);
     this.state.tireTempC = clamp((this.state.tireTempC ?? 23) + (heatGain - cooling) * dt, 22.0, 68.0);
 
-    // Finestra termica ottimale gomme Mini-Z su RCP: 34°C - 48°C = 100% grip; fredde = 89%; surriscaldate (>52°C) = scivolose!
     let thermalGrip = 1.0;
     if (this.state.tireTempC < 34) {
-      thermalGrip = 0.89 + 0.11 * ((this.state.tireTempC - 22) / 12);
+      thermalGrip = 0.90 + 0.10 * ((this.state.tireTempC - 22) / 12);
     } else if (this.state.tireTempC > 48) {
-      thermalGrip = Math.max(0.82, 1.0 - (this.state.tireTempC - 48) * 0.011);
+      thermalGrip = Math.max(0.84, 1.0 - (this.state.tireTempC - 48) * 0.010);
     }
-    const wearGrip = this.state.tireWearPct > 35 ? 1.0 : 0.68 + 0.32 * (this.state.tireWearPct / 35);
+    const wearGrip = this.state.tireWearPct > 35 ? 1.0 : 0.70 + 0.30 * (this.state.tireWearPct / 35);
     this.state.tireGripFactor = thermalGrip * wearGrip;
 
     const effectiveTopSpeed = topSpeed * batteryPowerFactor;
     const effectiveMaxAccel = maxAccel * batteryPowerFactor * this.state.tireGripFactor;
 
-    if (thr > 0.01) {
-      this.state.reverseLockTimer = 0.22;
-      // Curva progressiva: 25% grilletto = 25% velocità massima, 50% grilletto = 50% velocità massima!
+    if (thr > 0.008) {
+      this.state.reverseLockTimer = 0.24;
+      // Velocità target strettamente proporzionale alla pressione del grilletto (20% grilletto = 20% velocità, 50% = 50% velocità)
       const targetSpeed = thr * effectiveTopSpeed;
       const speedDiff = targetSpeed - vForward;
       if (speedDiff > 0) {
-        const spoolUp = (0.28 + 0.72 * thr) * clamp(speedDiff / (effectiveTopSpeed * 0.30), 0.14, 1.0);
-        driveAccel = spoolUp * effectiveMaxAccel;
+        // Erogazione progressiva di coppia del regolatore elettronico ICS: dolce alle basse aperture, piena quando affondi
+        const torqueEnvelope = Math.pow(thr, 1.15) * clamp(speedDiff / (effectiveTopSpeed * 0.42), 0.18, 1.0);
+        driveAccel = torqueEnvelope * effectiveMaxAccel;
       } else {
-        // Freno motore proporzionale (back-EMF) quando parzializzi il grilletto in ingresso curva
-        driveAccel = -Math.min(Math.abs(speedDiff) * 5.5, drag * 1.45);
+        // Rilascio parziale del gas: freno motore fluido e naturale fino a raggiungere la velocità impostata dal grilletto
+        driveAccel = -Math.min(Math.abs(speedDiff) * 3.8, drag * 1.25);
       }
-    } else if (brk > 0.01) {
+    } else if (brk > 0.008) {
       if (vForward > 0.06) {
-        // Frenata modulabile legata al grip reale delle gomme (Cerchio di aderenza)
-        this.state.reverseLockTimer = 0.24;
-        const progressiveBrake = Math.pow(brk, 1.38);
-        const maxBrakeDecel = 10.2 * (0.65 + 0.35 * rearGrip) * this.state.tireGripFactor;
+        // Frenata proporzionale e progressiva (10% freno = rallentamento leggero d'inserimento, 100% = staccata decisa senza inchiodare di colpo)
+        this.state.reverseLockTimer = 0.26;
+        const progressiveBrake = Math.pow(brk, 1.45);
+        const maxBrakeDecel = 6.2 * (0.65 + 0.35 * rearGrip) * this.state.tireGripFactor;
         driveAccel = -progressiveBrake * maxBrakeDecel;
         if (vForward + driveAccel * dt < 0) {
           driveAccel = -vForward / dt;
@@ -714,11 +666,11 @@ export class MiniZCar {
           vForward = 0;
           driveAccel = 0;
         } else {
-          const revTop = effectiveTopSpeed * 0.34 * brk;
+          const revTop = effectiveTopSpeed * 0.32 * brk;
           if (vForward > -revTop) {
-            driveAccel = -Math.pow(brk, 1.3) * 4.8;
+            driveAccel = -Math.pow(brk, 1.35) * 3.4;
           } else {
-            driveAccel = (-revTop - vForward) * 4.0;
+            driveAccel = (-revTop - vForward) * 3.5;
           }
         }
       }
@@ -735,43 +687,44 @@ export class MiniZCar {
 
     vForward += driveAccel * dt;
 
-    // 3. TENUTA IN CURVA REALE (Cerchio di aderenza + sottosterzo se entri troppo forte + ritorno caster immediato):
-    const isStickCentered = Math.abs(input.steer) < 0.05;
+    // 3. GEOMETRIA DI STERZO A BASSO PASSO (98mm) CON RIDUZIONE SENSIBILITÀ AD ALTA VELOCITÀ E RITORNO CASTER IMMEDIATO:
+    const isStickCentered = Math.abs(input.steer) < 0.025;
     const effectiveFrontGrip = frontGrip * this.state.tireGripFactor;
     const effectiveRearGrip = rearGrip * this.state.tireGripFactor;
 
-    // Riduce l'efficacia di sterzo se si entra in curva a velocità eccessiva rispetto al limite di tenuta anteriore (Sottosterzo reale!)
+    // Più l'auto va veloce sul rettilineo, più lo sterzo diventa morbido e progressivo (come l'effetto giroscopico/caster reale Mini-Z!)
     const speedRatio = Math.abs(vForward) / Math.max(3.5, effectiveTopSpeed);
-    const highSpeedUndersteer = 1.0 / (1.0 + Math.max(0, speedRatio - 0.55) * (1.35 / effectiveFrontGrip));
-    const speedFactor = Math.min(1.0, Math.abs(vForward) / 0.52);
-    const turnResponsiveness = 10.4 * effectiveFrontGrip * tPlate.responsiveness * diff.rotationEase * highSpeedUndersteer;
+    const speedSensitivityAtten = 1.0 / (1.0 + speedRatio * speedRatio * (1.85 / effectiveFrontGrip));
+    const lowSpeedEngage = Math.min(1.0, Math.abs(vForward) / 0.38);
+    // Guadagno d'imbardata realistico (raggio minimo di sterzata ~34 cm a bassa velocità, inserimento rotondo e sincero in curva)
+    const turnResponsiveness = 6.2 * effectiveFrontGrip * tPlate.responsiveness * diff.rotationEase * speedSensitivityAtten;
     const directionSign = vForward >= -0.05 ? 1 : -1;
-    const targetYawRate = isStickCentered ? 0 : this.state.steerAngle * turnResponsiveness * speedFactor * directionSign;
+    const targetYawRate = isStickCentered ? 0 : this.state.steerAngle * turnResponsiveness * lowSpeedEngage * directionSign;
 
-    const yawDampingRate = isStickCentered ? 48.0 : 24.0;
+    const yawDampingRate = isStickCentered ? 45.0 : 18.0;
     this.state.angularVel += (targetYawRate - this.state.angularVel) * Math.min(1, dt * yawDampingRate);
-    if (isStickCentered && Math.abs(this.state.angularVel) < 0.04) {
+    if (isStickCentered && Math.abs(this.state.angularVel) < 0.03) {
       this.state.angularVel = 0;
     }
     this.state.heading += this.state.angularVel * dt;
 
-    // Forza centrifuga in curva: se superi il limite laterale delle gomme sul tappeto RCP, l'auto allarga la traiettoria!
+    // Forza centrifuga in curva: se entri troppo forte oltre il limite delle gomme RCP, il muso allarga progressivamente la linea (sottosterzo sincero)
     const centripetalLoad = this.state.angularVel * vForward;
-    const maxLateralGripAccel = (isDriftSetup ? 5.5 : 13.8) * effectiveRearGrip * chassis.stabilityFactor;
+    const maxLateralGripAccel = (isDriftSetup ? 5.2 : 12.5) * effectiveRearGrip * chassis.stabilityFactor;
     if (Math.abs(centripetalLoad) > maxLateralGripAccel) {
-      const excessOutward = (Math.abs(centripetalLoad) - maxLateralGripAccel) * Math.sign(centripetalLoad) * 0.48;
+      const excessOutward = (Math.abs(centripetalLoad) - maxLateralGripAccel) * Math.sign(centripetalLoad) * 0.36;
       vLateral -= excessOutward * dt;
     }
 
-    // Sovrasterzo di potenza / Drift quando si spalanca il gas in curva con trazione posteriore RWD
-    if (!isStickCentered && (isDriftSetup || (chassis.driveType === 'RWD' && thr > 0.76 && effectiveRearGrip < 1.06))) {
-      const powerSlide = thr * Math.sin(this.state.steerAngle) * (isDriftSetup ? 3.2 : 1.15);
+    // Sovrasterzo controllabile solo con assetto Drift o spalancando il gas a ruote sterzate
+    if (!isStickCentered && (isDriftSetup || (chassis.driveType === 'RWD' && thr > 0.85 && effectiveRearGrip < 1.02))) {
+      const powerSlide = thr * Math.sin(this.state.steerAngle) * (isDriftSetup ? 2.6 : 0.75);
       vLateral -= powerSlide * dt;
     }
 
-    // Riallineamento laterale immediato quando raddrizzi lo stick
-    const baseLatDamp = isDriftSetup ? 4.2 : 16.5 * effectiveRearGrip * chassis.stabilityFactor;
-    const lateralDamping = isStickCentered ? baseLatDamp * 1.95 : baseLatDamp;
+    // Riallineamento laterale immediato e composto quando raddrizzi lo stick
+    const baseLatDamp = isDriftSetup ? 4.5 : 18.5 * effectiveRearGrip * chassis.stabilityFactor;
+    const lateralDamping = isStickCentered ? baseLatDamp * 2.1 : baseLatDamp;
     vLateral -= vLateral * Math.min(1, lateralDamping * dt);
     if (isStickCentered && Math.abs(vLateral) < 0.015) {
       vLateral = 0;

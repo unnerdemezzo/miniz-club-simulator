@@ -186,46 +186,46 @@ export const MOTORS = [
   {
     id: 'stock_brushed',
     name: 'Kyosho MZ9P Stock (A Spazzole)',
-    kvLabel: 'Stock Classe Box',
+    kvLabel: 'Stock Classe Box (~14 km/h reali)',
     colorHex: '#94a3b8',
-    maxSpeedMs: 4.8, // ~17.3 km/h reali (quasi 470 km/h in scala 1:27!)
-    accelMs2: 11.5,
-    motorBrake: 0.90,
+    maxSpeedMs: 3.85, // ~13.9 km/h reali (375 km/h in scala 1:27: la vera velocità di una Mini-Z Box Stock su RCP!)
+    accelMs2: 5.2,
+    motorBrake: 0.92,
     pitchBase: 260,
-    description: 'Erogazione morbida e gestibile, perfetto per prendere confidenza con gli spazi della pista RCP.'
+    description: 'Erogazione morbida, progressiva e gestibile: la vera velocità delle gare Mini-Z Box Stock.'
   },
   {
     id: 'xspeed_green_4100',
     name: 'SPEED HOUSE X-Speed 41 (Verde - 4100KV)',
-    kvLabel: '4100KV Brushless',
+    kvLabel: '4100KV Brushless (~16 km/h reali)',
     colorHex: '#22c55e',
-    maxSpeedMs: 5.9,
-    accelMs2: 15.0,
+    maxSpeedMs: 4.45, // ~16.0 km/h reali
+    accelMs2: 6.4,
     motorBrake: 1.0,
     pitchBase: 320,
-    description: 'Motore Brushless da gara categoria Stock: ottima spinta sul rettilineo e consumi ridotti.'
+    description: 'Motore Brushless da gara categoria Novice/Stock: spinta fluida sul rettilineo e consumi ridotti.'
   },
   {
     id: 'xspeed_blue_5600',
     name: 'SPEED HOUSE X-Speed 56 (Blu - 5600KV)',
-    kvLabel: '5600KV Brushless',
+    kvLabel: '5600KV Brushless (~18,5 km/h reali)',
     colorHex: '#3b82f6',
-    maxSpeedMs: 7.0,
-    accelMs2: 19.0,
+    maxSpeedMs: 5.15, // ~18.5 km/h reali
+    accelMs2: 7.8,
     motorBrake: 1.08,
     pitchBase: 390,
-    description: 'Potente e reattivo! Il preferito dai piloti esperti sui circuiti veloci e Grand Prix.'
+    description: 'Prestazioni reali da categoria Kyosho Cup Pro-Stock: veloce sul dritto ma perfettamente dosabile in curva.'
   },
   {
     id: 'xspeed_red_8500',
     name: 'SPEED HOUSE X-Speed 85 PRO (Rosso - 8500KV)',
-    kvLabel: '8500KV Extreme',
+    kvLabel: '8500KV Extreme (~21,5 km/h reali)',
     colorHex: '#ef4444',
-    maxSpeedMs: 8.4,
-    accelMs2: 24.5,
-    motorBrake: 1.18,
+    maxSpeedMs: 5.95, // ~21.4 km/h reali
+    accelMs2: 9.4,
+    motorBrake: 1.16,
     pitchBase: 470,
-    description: 'Un vero missile da categoria Open! Richiede esponenziale sullo sterzo e dita di velluto.'
+    description: 'Motore da categoria Open / Modified! Allungo bruciante sul rettilineo principale.'
   }
 ];
 

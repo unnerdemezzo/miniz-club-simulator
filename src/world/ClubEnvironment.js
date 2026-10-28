@@ -681,8 +681,8 @@ export class ClubEnvironment {
     parent.add(g);
   }
 
-  // Genera una curva chiusa smussata a 600 campioni con raggio minimo garantito (ZERO pieghe/auto-intersezioni sui cordoli!)
-  buildZeroFoldSamples(waypoints, numSamples = 600, smoothIterations = 32) {
+  // Genera una curva chiusa smussata a 600 campioni preservando le curve tecniche e i tornanti di ogni tracciato
+  buildZeroFoldSamples(waypoints, numSamples = 600, smoothIterations = 8) {
     const baseCurve = new THREE.CatmullRomCurve3(waypoints, true, 'centripetal', 0.5);
     let pts = [];
     for (let i = 0; i < numSamples; i++) {
@@ -755,7 +755,7 @@ export class ClubEnvironment {
     if (reverse) rawPoints.reverse();
 
     const numSamples = 600;
-    this.curveSamples = this.buildZeroFoldSamples(rawPoints, numSamples, 32);
+    this.curveSamples = this.buildZeroFoldSamples(rawPoints, numSamples, 8);
 
     const laneHalf = spec.laneWidth / 2;
 
@@ -839,9 +839,9 @@ export class ClubEnvironment {
       });
     }
 
-    // Sostituisce le auto AI procedurali con veri modelli 3D Hypercar in scala 1:27 con livree WEC dedicate
+    // Sostituisce le auto AI procedurali con veri modelli 3D Hypercar in scala 1:27 con livree WEC desaturate e realistiche
     const applyGlbToAiCars = (gltfScene) => {
-      const aiTints = ['#eab308', '#2563eb', '#e2e8f0']; // #83 Giallo Modena, #50 Blu Corsa, #51 Bianco/Rosso
+      const aiTints = ['#c99e28', '#336699', '#d1d7e0']; // #83 Giallo Modena naturale, #50 Blu Corsa, #51 Bianco/Rosso
       this.aiCars.forEach((ai, idx) => {
         const clone = gltfScene.clone(true);
         const tintHex = aiTints[idx % aiTints.length];
@@ -869,17 +869,22 @@ export class ClubEnvironment {
               if (!mat) return;
               const mName = mat.name || '';
               if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
-                mat.color?.set(tintHex);
+                if (mat.color) {
+                  mat.color.set(tintHex);
+                  const hsl = { h: 0, s: 0, l: 0 };
+                  mat.color.getHSL(hsl);
+                  mat.color.setHSL(hsl.h, hsl.s * 0.78, hsl.l * 0.94);
+                }
                 mat.metalness = 0.06;
-                mat.roughness = 0.30;
+                mat.roughness = 0.34;
                 if ('clearcoat' in mat) {
-                  mat.clearcoat = 0.9;
-                  mat.clearcoatRoughness = 0.08;
+                  mat.clearcoat = 0.85;
+                  mat.clearcoatRoughness = 0.09;
                 }
                 if (mat.emissive) mat.emissive.setRGB(0, 0, 0);
                 mat.emissiveMap = null;
                 mat.emissiveIntensity = 0.0;
-                mat.envMapIntensity = 1.0;
+                mat.envMapIntensity = 0.92;
                 mat.needsUpdate = true;
               }
             });
@@ -1474,12 +1479,14 @@ export class ClubEnvironment {
     }
 
     if (this.curve && this.aiCars.length > 0 && this.aiLevel !== 'none') {
+      // Velocità IA perfettamente rapportate alle prestazioni reali Mini-Z 1:27 su pista RCP:
+      // Principiante (~10 km/h max), Club (~13 km/h max), Esperto (~15.5 km/h max), Campione Kyosho Cup (~18 km/h max)
       const levelParams = {
-        beginner: { top: 3.1, min: 1.35, cornerBrk: 7.4 },
-        club:     { top: 4.1, min: 1.75, cornerBrk: 6.6 },
-        expert:   { top: 4.9, min: 2.15, cornerBrk: 5.8 },
-        pro:      { top: 5.7, min: 2.55, cornerBrk: 5.1 }
-      }[this.aiLevel] || { top: 4.1, min: 1.75, cornerBrk: 6.6 };
+        beginner: { top: 2.75, min: 1.15, cornerBrk: 6.2 },
+        club:     { top: 3.55, min: 1.48, cornerBrk: 5.5 },
+        expert:   { top: 4.30, min: 1.82, cornerBrk: 4.9 },
+        pro:      { top: 5.05, min: 2.15, cornerBrk: 4.3 }
+      }[this.aiLevel] || { top: 3.55, min: 1.48, cornerBrk: 5.5 };
 
       for (let i = 0; i < this.aiCars.length; i++) {
         const ai = this.aiCars[i];
@@ -1492,7 +1499,7 @@ export class ClubEnvironment {
           levelParams.min,
           levelParams.top
         );
-        ai.speed += (targetSpeed - ai.speed) * Math.min(1, dt * 6);
+        ai.speed += (targetSpeed - ai.speed) * Math.min(1, dt * 5);
 
         const prevT = ai.t;
         ai.t = (ai.t + (ai.speed * dt) / Math.max(8, this.totalTrackLength)) % 1;

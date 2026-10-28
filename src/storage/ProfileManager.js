@@ -4,11 +4,11 @@ const STORAGE_KEY = 'miniz_club_sim_state_v1';
 
 export const DEFAULT_CONTROLLER_PROFILE = {
   // Parametri stile radiocomando professionale (Kyosho / Futaba / FlySky Noble)
-  steeringExp: -25,       // -100 a +100 (negativo = più dolce al centro)
-  throttleExp: 0,         // -100 a +100
-  steeringDualRate: 100,  // 40% a 130% (angolo massimo ruote)
-  brakeStrength: 95,      // 20% a 130% (EPA freno)
-  servoSpeed: 100,        // 30% a 150% (velocità risposta sterzo)
+  steeringExp: -35,       // -100 a +100 (negativo = più dolce al centro)
+  throttleExp: -15,       // -100 a +100
+  steeringDualRate: 90,   // 40% a 130% (angolo massimo ruote)
+  brakeStrength: 85,      // 20% a 130% (EPA freno)
+  servoSpeed: 90,         // 30% a 150% (velocità risposta sterzo)
   deadzone: 6,            // 0% a 30% (zona morta levetta joypad)
   steeringTrim: 0,        // -20 a +20 (centratura sterzo)
   throttleTrim: 0,        // -15 a +15
@@ -39,7 +39,7 @@ export class ProfileManager {
 
   getDefaultState() {
     return {
-      appVersion: '1.4.1',
+      appVersion: '1.4.2',
       currentTrackId: 'club_veloce',
       reverseTrack: false,
       currentBodyId: 'ferrari_499p',
@@ -100,7 +100,7 @@ export class ProfileManager {
       return {
         ...def,
         ...parsed,
-        appVersion: '1.4.1',
+        appVersion: '1.4.2',
         audio: { ...def.audio, ...(parsed.audio || {}) },
         autoProfiles: { ...def.autoProfiles, ...(parsed.autoProfiles || {}) },
         lapRecords: { ...def.lapRecords, ...(parsed.lapRecords || {}) }

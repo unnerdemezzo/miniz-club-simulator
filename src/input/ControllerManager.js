@@ -274,16 +274,22 @@ export class ControllerManager {
         }
       }
 
-      // Funzione di lettura proporzionale (0.00 -> 1.00) per Grilletto/Pedale Gas e Freno (supporta sia Bottoni analogici R2/L2 sia Assi analogici!)
-      const readProportionalTrigger = (binding, defaultBtnIdx) => {
+      // Funzione di lettura proporzionale (0.00 -> 1.00) per Grilletto/Pedale Gas e Freno:
+      // Rileva automaticamente se il grilletto del controller USB si muove su un Asse analogico (axes[2..9]) o su un Bottone analogico (buttons[6/7]),
+      // e se un bottone ha un sensore digitale a scatto applica un'erogazione progressiva fluida!
+      if (!this._btnAnalogDetected) this._btnAnalogDetected = new Set();
+      if (!this._btnRamps) this._btnRamps = new Map();
+
+      const readProportionalTrigger = (binding, defaultBtnIdx, isThrottle) => {
         const bind = binding ?? defaultBtnIdx;
+
+        // 1. Se è mappato esplicitamente su un asse analogico (es. "axis:2")
         if (typeof bind === 'string' && bind.startsWith('axis:')) {
           const axIdx = Number(bind.split(':')[1]);
           if (pad.axes[axIdx] !== undefined) {
             const cur = pad.axes[axIdx];
             const restVal = rest?.axes[axIdx] ?? 0;
             if (rest && !rest.activeAxes.has(axIdx)) return 0;
-            // Se l'asse a riposo parte da -1.0 (tipico dei grilletti/pedali analogici USB), mappa [-1..+1] -> [0..1]
             if (restVal < -0.45) {
               return Math.max(0, Math.min(1, (cur - restVal) / Math.max(0.2, 1 - restVal)));
             }
@@ -297,9 +303,45 @@ export class ControllerManager {
 
         const btnIdx = Number(bind);
         const btn = pad.buttons[btnIdx];
-        if (!btn) return 0;
-        if (rest && !rest.activeButtons.has(btnIdx) && (rest.buttons[btnIdx] ?? 0) >= 0.1) return 0;
-        return Math.max(0, Math.min(1, btn.value ?? (btn.pressed ? 1 : 0)));
+        let val = 0;
+        if (btn && (!rest || rest.activeButtons.has(btnIdx) || (rest.buttons[btnIdx] ?? 0) < 0.1)) {
+          val = Math.max(0, Math.min(1, btn.value ?? (btn.pressed ? 1 : 0)));
+          if (val > 0.04 && val < 0.96) {
+            this._btnAnalogDetected.add(`${pad.index}:${btnIdx}`);
+          }
+        }
+
+        // 2. Se il driver espone i grilletti analogici anche sugli assi (es. axes[2..7] con riposo a -1.0),
+        // controlla se un asse grilletto sta dando un valore intermedio più preciso del bottone!
+        const candidateAxes = isThrottle ? [5, 2, 4, 3] : [4, 2, 5, 3];
+        const steerIdx = b.padSteerAxis ?? 0;
+        for (const axIdx of candidateAxes) {
+          if (axIdx === steerIdx || pad.axes[axIdx] === undefined) continue;
+          if (rest && !rest.activeAxes.has(axIdx)) continue;
+          const restVal = rest?.axes[axIdx] ?? 0;
+          const cur = pad.axes[axIdx];
+          if (restVal < -0.45) {
+            const axNorm = Math.max(0, Math.min(1, (cur - restVal) / Math.max(0.2, 1 - restVal)));
+            if (axNorm > 0.02 && (!this._btnAnalogDetected.has(`${pad.index}:${btnIdx}`) || val === 0)) {
+              return axNorm;
+            }
+          }
+        }
+
+        // 3. Se il bottone ha già restituito valori analogici intermedi (0.05..0.95), usalo direttamente 1:1!
+        const keyId = `${pad.index}:${btnIdx}`;
+        if (this._btnAnalogDetected.has(keyId)) {
+          return val;
+        }
+
+        // 4. Se invece il controller/tastiera invia solo 0 o 1 (on/off), applica una rampa progressiva morbida così non scatta mai ON/OFF!
+        const prevRamp = this._btnRamps.get(keyId) || 0;
+        const nextRamp =
+          val > 0.5
+            ? Math.min(1, prevRamp + dt * (isThrottle ? 2.1 : 2.5))
+            : Math.max(0, prevRamp - dt * 5.5);
+        this._btnRamps.set(keyId, nextRamp);
+        return nextRamp;
       };
 
       // Acceleratore e Freno proporzionali 0% -> 100%
@@ -311,8 +353,8 @@ export class ControllerManager {
           else if (axVal > 0.03) padBrk = Math.min(1, axVal);
         }
       } else {
-        padThr = readProportionalTrigger(b.padThrottleBtn, 7);
-        padBrk = readProportionalTrigger(b.padBrakeBtn, 6);
+        padThr = readProportionalTrigger(b.padThrottleBtn, 7, true);
+        padBrk = readProportionalTrigger(b.padBrakeBtn, 6, false);
       }
 
       // Pulsanti azione Joypad
@@ -342,16 +384,16 @@ export class ControllerManager {
     const usingKeySteer = Math.abs(keySteer) > 0.01;
     this.rawSteer = usingKeySteer ? keySteer : (Math.abs(padSteer) > 0.025 ? padSteer : 0);
 
-    // Se si usa la tastiera (o un bottone digitale), applica una rampa progressiva morbida così non è mai ON/OFF!
+    // Se si usa la tastiera, applica una rampa progressiva morbida così non è mai ON/OFF!
     if (keyThr > 0) {
-      this._keyThrRamp = Math.min(1, (this._keyThrRamp || 0) + dt * 2.8);
+      this._keyThrRamp = Math.min(1, (this._keyThrRamp || 0) + dt * 1.9);
     } else {
-      this._keyThrRamp = Math.max(0, (this._keyThrRamp || 0) - dt * 6.0);
+      this._keyThrRamp = Math.max(0, (this._keyThrRamp || 0) - dt * 5.0);
     }
     if (keyBrk > 0) {
-      this._keyBrkRamp = Math.min(1, (this._keyBrkRamp || 0) + dt * 3.0);
+      this._keyBrkRamp = Math.min(1, (this._keyBrkRamp || 0) + dt * 2.3);
     } else {
-      this._keyBrkRamp = Math.max(0, (this._keyBrkRamp || 0) - dt * 7.0);
+      this._keyBrkRamp = Math.max(0, (this._keyBrkRamp || 0) - dt * 6.0);
     }
 
     this.rawThrottle = Math.max(padThr, this._keyThrRamp);
@@ -364,12 +406,14 @@ export class ControllerManager {
       this.rawBrake = tmp;
     }
 
-    // Deadzone + Exponential + Dual Rate + Trim
-    const steerClean = this.applyDeadzone(this.rawSteer, Math.min(15, ctrl.deadzone ?? 5));
-    const steerCurved = this.applyExpCurve(steerClean, ctrl.steeringExp ?? -25);
-    const dualRateFactor = (ctrl.steeringDualRate ?? 100) / 100;
+    // Deadzone + Exponential + Dual Rate + Trim:
+    // Usa sempre almeno -40% di esponenziale base sullo sterzo così il primo 50% della corsa della levetta è dolcissimo e millimetrico!
+    const steerClean = this.applyDeadzone(this.rawSteer, Math.min(15, ctrl.deadzone ?? 6));
+    const effectiveSteerExp = Math.min(-35, (ctrl.steeringExp ?? -35) - 15);
+    const steerCurved = this.applyExpCurve(steerClean, effectiveSteerExp);
+    const dualRateFactor = ((ctrl.steeringDualRate ?? 100) / 100) * 0.85;
     const trimOffset = (ctrl.steeringTrim ?? 0) / 100;
-    const targetSteer = Math.max(-1.25, Math.min(1.25, steerCurved * dualRateFactor + trimOffset));
+    const targetSteer = Math.max(-1.0, Math.min(1.0, steerCurved * dualRateFactor + trimOffset));
 
     // Ritorno immediato 1:1 con lo stick analogico: quando molli lo stick, le ruote seguono istantaneamente il ritorno dello stick!
     const isReturningToCenter =
@@ -378,31 +422,30 @@ export class ControllerManager {
 
     if (!usingKeySteer) {
       if (isReturningToCenter) {
-        // Segue direttamente il ritorno fisico dello stick senza alcun ritardo
         this.processedSteer = targetSteer;
       } else {
-        const padRate = 36.0 * ((ctrl.servoSpeed ?? 100) / 100);
+        const padRate = 18.0 * ((ctrl.servoSpeed ?? 100) / 100);
         this.processedSteer += (targetSteer - this.processedSteer) * Math.min(1, padRate * dt);
       }
     } else {
-      // Con tastiera: sterzata fluida in ingresso e riallineamento rapido appena lasci il tasto
-      const keyRate = isReturningToCenter ? 32.0 : 12.0 * ((ctrl.servoSpeed ?? 100) / 100);
+      // Con tastiera: sterzata progressiva e riallineamento immediato appena lasci il tasto
+      const keyRate = isReturningToCenter ? 26.0 : 5.5 * ((ctrl.servoSpeed ?? 100) / 100);
       this.processedSteer += (targetSteer - this.processedSteer) * Math.min(1, keyRate * dt);
     }
 
     // Gas e Freno con curva progressiva morbida (mai ON/OFF) e EPA
     const thrClean = this.applyDeadzone(this.rawThrottle, Math.min(6, ctrl.deadzone ?? 5));
-    const effectiveThrExp = (ctrl.throttleExp ?? 0) - 28; // Curva progressiva dolce ai bassi regimi di default
+    const effectiveThrExp = Math.min(-35, (ctrl.throttleExp ?? 0) - 38);
     const thrCurved = this.applyExpCurve(thrClean, effectiveThrExp);
     const thrTrim = (ctrl.throttleTrim ?? 0) / 200;
-    const targetThr = Math.max(0, Math.min(1.15, thrCurved + thrTrim));
-    this.processedThrottle += (targetThr - this.processedThrottle) * Math.min(1, dt * 28);
+    const targetThr = Math.max(0, Math.min(1.05, thrCurved + thrTrim));
+    this.processedThrottle += (targetThr - this.processedThrottle) * Math.min(1, dt * 16);
 
     const brkClean = this.applyDeadzone(this.rawBrake, Math.min(6, ctrl.deadzone ?? 5));
-    const brkCurved = this.applyExpCurve(brkClean, -32); // Frenata modulabile e progressiva
+    const brkCurved = this.applyExpCurve(brkClean, -42); // Frenata modulabile e progressiva
     const brakeEpa = (ctrl.brakeStrength ?? 95) / 100;
-    const targetBrk = Math.max(0, Math.min(1.25, brkCurved * brakeEpa));
-    this.processedBrake += (targetBrk - this.processedBrake) * Math.min(1, dt * 28);
+    const targetBrk = Math.max(0, Math.min(1.1, brkCurved * brakeEpa));
+    this.processedBrake += (targetBrk - this.processedBrake) * Math.min(1, dt * 18);
 
     return {
       steer: this.processedSteer,
