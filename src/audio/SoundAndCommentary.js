@@ -12,9 +12,15 @@ export class SoundAndCommentary {
     this.lastCommentTime = 0;
     this.italianVoice = null;
     this.subtitleTimeout = null;
+    this.speechSafetyTimeout = null;
+    this.speechEndedAt = 0;
+    this.pendingLine = null;
+    this.motorActive = true;
+    this.lastBarrierHitTime = 0;
 
     this.initSpeechSynthesis();
     this.bindUnlock();
+    this.bindVisibility();
   }
 
   initSpeechSynthesis() {
@@ -45,6 +51,27 @@ export class SoundAndCommentary {
     };
     window.addEventListener('pointerdown', unlock, { once: false });
     window.addEventListener('keydown', unlock, { once: false });
+  }
+
+  // Con la scheda nascosta requestAnimationFrame si ferma: senza questo il sibilo del motore restava
+  // bloccato all'ultimo tono e volume finché non si tornava sul gioco
+  bindVisibility() {
+    document.addEventListener('visibilitychange', () => {
+      if (!this.ctx) return;
+      if (document.hidden) this.ctx.suspend().catch(() => {});
+      else this.ctx.resume().catch(() => {});
+    });
+  }
+
+  // Spegne (o riaccende) motore e fruscio gomme quando l'auto non è guidata: menu gara, replay, fine gara
+  setMotorActive(active) {
+    this.motorActive = Boolean(active);
+    if (!this.ctx || !this.motorGain) return;
+    if (!this.motorActive) {
+      const now = this.ctx.currentTime;
+      this.motorGain.gain.setTargetAtTime(0, now, 0.06);
+      this.skidGain?.gain.setTargetAtTime(0, now, 0.06);
+    }
   }
 
   setupMotorSynth() {
@@ -101,8 +128,8 @@ export class SoundAndCommentary {
   }
 
   updateMotorSound(speedRatio, throttle, slipAmount, motorSpec) {
-    if (!this.ctx || !this.motorGain) return;
-    if (this.ctx.state === 'suspended') {
+    if (!this.ctx || !this.motorGain || !this.motorActive) return;
+    if (this.ctx.state === 'suspended' && !document.hidden) {
       this.ctx.resume().catch(() => {});
     }
 
@@ -119,7 +146,8 @@ export class SoundAndCommentary {
     this.motorOsc2.frequency.setTargetAtTime(freq2, now, 0.03);
 
     const targetGain = (0.012 + absSpeed * 0.065 + throttle * 0.035) * baseVol;
-    this.motorGain.gain.setTargetAtTime(absSpeed < 0.01 && throttle < 0.02 ? 0.002 : targetGain, now, 0.04);
+    // Auto ferma e grilletto rilasciato: una Mini-Z vera è muta (prima restava un fischio continuo a -54 dB)
+    this.motorGain.gain.setTargetAtTime(absSpeed < 0.01 && throttle < 0.02 ? 0 : targetGain, now, 0.04);
 
     if (this.skidGain) {
       const skidTarget = Math.min(0.06, Math.max(0, slipAmount - 0.18) * 0.09) * baseVol;
@@ -154,9 +182,33 @@ export class SoundAndCommentary {
     }
   }
 
+  // Semaforo di partenza: tre bip brevi, poi un bip più lungo e più acuto per il verde
+  playStartBeep(isGo = false) {
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    const vol = (this.profileManager.state.audio.beepVolume ?? 0.85) * 0.14;
+    const now = this.ctx.currentTime;
+    const dur = isGo ? 0.45 : 0.16;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(isGo ? 1320 : 880, now);
+    g.gain.setValueAtTime(vol, now);
+    g.gain.setValueAtTime(vol, now + dur * 0.8);
+    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    osc.connect(g);
+    g.connect(this.ctx.destination);
+    osc.start(now);
+    osc.stop(now + dur + 0.02);
+  }
+
   // Suono morbido dell'impatto contro le sponde in gomma RCP
   playBarrierHit(intensity = 0.5) {
     if (!this.ctx) return;
+    // La fisica gira a 2 sotto-passi: strisciando sulla sponda il colpo partiva a raffica ogni fotogramma
+    const nowMs = performance.now();
+    if (nowMs - this.lastBarrierHitTime < 140) return;
+    this.lastBarrierHitTime = nowMs;
     const vol = Math.min(0.25, intensity * 0.18) * (this.profileManager.state.audio.motorVolume ?? 0.65);
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -173,42 +225,93 @@ export class SoundAndCommentary {
   }
 
   // Telecronaca in Tempo Reale (Voce + Sottotitolo Direzione Gara)
+  // Ritmo calmo da speaker di club: voce a velocità normale, una frase alla volta (nessuna frase
+  // interrotta a metà da un'altra), pausa minima tra una frase e la successiva. Mentre parla, una frase
+  // importante resta in attesa (al massimo una); le frasi di colore vengono scartate.
   speak(text, priority = 'normal') {
     const now = performance.now();
-    const minGap = priority === 'high' ? 1800 : 5200;
-    if (priority !== 'force' && now - this.lastCommentTime < minGap) return;
+    if (priority === 'force') {
+      this.pendingLine = null;
+      this.startLine(text, true);
+      return;
+    }
 
-    this.lastCommentTime = now;
+    const isHigh = priority === 'high';
+    if (this.isSpeaking) {
+      if (isHigh) this.pendingLine = { text, at: now };
+      return;
+    }
+
+    const gapAfterLast = isHigh ? 700 : priority === 'low' ? 4500 : 2600;
+    const minSinceStart = isHigh ? 0 : 6500;
+    if (now - this.speechEndedAt < gapAfterLast || now - this.lastCommentTime < minSinceStart) {
+      if (isHigh) this.scheduleLine({ text, at: now }, gapAfterLast - (now - this.speechEndedAt));
+      return;
+    }
+    this.startLine(text, false);
+  }
+
+  scheduleLine(line, delayMs) {
+    this.pendingLine = line;
+    setTimeout(() => this.flushPending(), Math.max(50, delayMs));
+  }
+
+  flushPending() {
+    const line = this.pendingLine;
+    if (!line || this.isSpeaking) return;
+    this.pendingLine = null;
+    // Una frase rimasta in coda troppo a lungo non è più attuale (es. il tempo di un giro di 6 secondi fa)
+    if (performance.now() - line.at > 5000) return;
+    this.startLine(line.text, false);
+  }
+
+  // Durata stimata di una frase a velocità normale (circa 2,6 parole al secondo in italiano)
+  estimateDurationMs(text) {
+    const words = text.trim().split(/\s+/).length;
+    return 900 + (words / 2.6) * 1000;
+  }
+
+  startLine(text, interrupt) {
+    const lineId = (this.lineId = (this.lineId || 0) + 1);
+    this.lastCommentTime = performance.now();
     this.isSpeaking = true;
 
-    if (this.onSubtitleChange) {
-      this.onSubtitleChange(text, true);
-    }
-    if (this.subtitleTimeout) clearTimeout(this.subtitleTimeout);
-    this.subtitleTimeout = setTimeout(() => {
-      this.isSpeaking = false;
-      if (this.onSubtitleChange) this.onSubtitleChange(text, false);
-    }, 4800);
+    if (this.onSubtitleChange) this.onSubtitleChange(text, true);
 
     const audioCfg = this.profileManager.state.audio;
-    if (!audioCfg.commentaryEnabled || !('speechSynthesis' in window)) return;
+    const canSpeak = audioCfg.commentaryEnabled && 'speechSynthesis' in window;
+    const estimate = this.estimateDurationMs(text);
+
+    const finish = () => {
+      // Una frase interrotta da una "force" chiama onerror: non deve chiudere quella nuova
+      if (lineId !== this.lineId || !this.isSpeaking) return;
+      this.isSpeaking = false;
+      this.speechEndedAt = performance.now();
+      if (this.speechSafetyTimeout) clearTimeout(this.speechSafetyTimeout);
+      if (this.subtitleTimeout) clearTimeout(this.subtitleTimeout);
+      // Il sottotitolo resta leggibile un attimo dopo la fine della voce
+      this.subtitleTimeout = setTimeout(() => {
+        if (!this.isSpeaking && this.onSubtitleChange) this.onSubtitleChange(text, false);
+      }, 1200);
+      if (this.pendingLine) setTimeout(() => this.flushPending(), 700);
+    };
+
+    if (this.speechSafetyTimeout) clearTimeout(this.speechSafetyTimeout);
+    // Rete di sicurezza: alcuni browser non chiamano onend (o la voce è spenta): si chiude a tempo stimato
+    this.speechSafetyTimeout = setTimeout(finish, canSpeak ? estimate * 1.6 + 2000 : estimate);
+
+    if (!canSpeak) return;
 
     try {
-      if (priority === 'high' || priority === 'force') {
-        window.speechSynthesis.cancel();
-      } else if (window.speechSynthesis.speaking) {
-        return;
-      }
-
+      if (interrupt || window.speechSynthesis.speaking) window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = 'it-IT';
       if (this.italianVoice) utter.voice = this.italianVoice;
-      utter.rate = 1.12; // Ritmo vivace da vero speaker di gara RC!
-      utter.pitch = 1.04;
+      utter.rate = 0.92; // Prima 1,12: troppo veloce e difficile da seguire mentre si guida
+      utter.pitch = 1.0;
       utter.volume = Math.max(0, Math.min(1, audioCfg.commentaryVolume ?? 0.95));
-      utter.onend = () => {
-        this.isSpeaking = false;
-      };
+      utter.onend = finish;
+      utter.onerror = finish;
       window.speechSynthesis.speak(utter);
     } catch (e) {
       // Fallback silenzioso ai soli sottotitoli
@@ -216,22 +319,24 @@ export class SoundAndCommentary {
   }
 
   commentLap(lapNumber, lapTimeSec, isRecord, deltaSec) {
-    const sec = Math.floor(lapTimeSec);
-    const cent = Math.round((lapTimeSec - sec) * 100)
-      .toString()
-      .padStart(2, '0');
+    // Arrotonda prima ai centesimi: 6,996 s diventa "7 e 00", non "6 e 100"
+    const totalCent = Math.round(lapTimeSec * 100);
+    const sec = Math.floor(totalCent / 100);
+    const cent = (totalCent % 100).toString().padStart(2, '0');
 
+    // Come lo speaker del cronometraggio di un club: frasi brevi, il tempo prima di tutto.
+    // Priorità alta = mai scartate, ma aspettano che la frase in corso finisca.
     if (isRecord) {
       const phrases = [
-        `Giro record! ${sec} secondi e ${cent} centesimi! Che passaggio sotto al palco!`,
-        `Nuovo miglior tempo della pista! ${sec} e ${cent}, guida chirurgica tra i cordoli!`,
-        `Strepitoso! Abbassa il record a ${sec} secondi e ${cent}! Il pubblico ai box applaude!`
+        `Giro record! ${sec} e ${cent}!`,
+        `Nuovo miglior tempo: ${sec} e ${cent}!`,
+        `Record della pista abbassato: ${sec} e ${cent}!`
       ];
       this.speak(phrases[lapNumber % phrases.length], 'high');
     } else if (deltaSec !== null && deltaSec < 0.25) {
-      this.speak(`Ottimo giro ${lapNumber}: ${sec} secondi e ${cent}, vicinissimo al tuo record!`, 'normal');
+      this.speak(`Giro ${lapNumber}, ${sec} e ${cent}. Vicino al record!`, 'high');
     } else {
-      this.speak(`Giro ${lapNumber} concluso in ${sec} secondi e ${cent} centesimi.`, 'normal');
+      this.speak(`Giro ${lapNumber}, ${sec} e ${cent}.`, 'high');
     }
   }
 

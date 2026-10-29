@@ -23,7 +23,7 @@
           <span class="brand-dot"></span>
           <span class="loading-tag">KYOSHO MINI-Z MR-04 EVO2 • TELEMETRIA UFFICIALE 1:27</span>
         </div>
-        <span class="version-pill">v1.4.4</span>
+        <span id="loading-version" class="version-pill">v–</span>
       </div>
 
       <div class="loading-hero">
@@ -79,6 +79,112 @@
     </div>
   </div>
 
+  <!-- SCHERMATA INIZIALE: IMPOSTAZIONI GARA (il gioco parte da qui, l'auto entra in pista solo con "Inizia gara") -->
+  <div id="race-setup-screen" class="race-setup-overlay hidden">
+    <div class="race-setup-card">
+      <div class="loading-top-row">
+        <div class="loading-brand-pill">
+          <img src="/app-icon.jpg" alt="" class="setup-mini-icon" />
+          <span class="loading-tag">MINI-Z CLUB SIMULATOR • IMPOSTAZIONI GARA</span>
+        </div>
+        <span id="setup-version" class="version-pill">v–</span>
+      </div>
+
+      <div class="race-setup-grid">
+        <div class="setup-field">
+          <label for="setup-sel-body">🏎️ Modello (carrozzeria)</label>
+          <select id="setup-sel-body"></select>
+        </div>
+        <div class="setup-field">
+          <label for="setup-sel-chassis">🔩 Telaio</label>
+          <select id="setup-sel-chassis"></select>
+        </div>
+        <div class="setup-field">
+          <label for="setup-sel-track">🏁 Pista</label>
+          <select id="setup-sel-track"></select>
+          <label class="setup-inline-check"><input type="checkbox" id="setup-chk-reverse" /> Senso di marcia invertito</label>
+        </div>
+        <div class="setup-field">
+          <label for="setup-sel-ai">🤖 Avversari</label>
+          <select id="setup-sel-ai">
+            <option value="none">Nessuno (pista libera)</option>
+            <option value="beginner">3 avversari • Principiante</option>
+            <option value="club">3 avversari • Club Amatoriale</option>
+            <option value="expert">3 avversari • Esperto Nazionale</option>
+            <option value="pro">3 avversari • Campione Kyosho Cup</option>
+          </select>
+        </div>
+        <div class="setup-field setup-field-wide">
+          <label>⏱️ Tipo di sessione</label>
+          <div class="setup-mode-group" role="radiogroup">
+            <button type="button" class="setup-mode-btn" data-race-mode="practice">Prove libere</button>
+            <button type="button" class="setup-mode-btn" data-race-mode="laps">Gara a giri</button>
+            <button type="button" class="setup-mode-btn" data-race-mode="time">Gara a tempo</button>
+          </div>
+          <div class="setup-mode-options">
+            <label id="setup-laps-wrap">Giri
+              <select id="setup-sel-laps">
+                <option value="3">3</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+              </select>
+            </label>
+            <label id="setup-minutes-wrap">Durata
+              <select id="setup-sel-minutes">
+                <option value="2">2 minuti</option>
+                <option value="3">3 minuti</option>
+                <option value="5">5 minuti</option>
+                <option value="8">8 minuti</option>
+                <option value="10">10 minuti</option>
+                <option value="15">15 minuti</option>
+              </select>
+            </label>
+            <small id="setup-mode-desc" class="field-desc"></small>
+          </div>
+        </div>
+        <div class="setup-field setup-field-wide">
+          <label class="setup-inline-check"><input type="checkbox" id="setup-chk-commentary" /> 🎙️ Telecronaca a voce</label>
+          <small class="field-desc">Gomme, molle, motore e radiocomando si regolano durante la sessione dal Menu &amp; Banco Box.</small>
+        </div>
+      </div>
+
+      <div class="race-setup-actions">
+        <div id="setup-install-box" class="setup-install-box hidden">
+          <button type="button" id="btn-install-app-start" class="hud-action-btn install-btn">📲 Installa App</button>
+          <small>Facoltativo: puoi giocare anche direttamente dal browser.</small>
+        </div>
+        <button type="button" id="btn-start-race" class="start-race-btn">▶ INIZIA</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEMAFORO DI PARTENZA -->
+  <div id="race-countdown" class="race-countdown hidden"><span id="race-countdown-text">3</span></div>
+
+  <!-- RISULTATI FINE GARA -->
+  <div id="race-results" class="race-setup-overlay results-overlay hidden">
+    <div class="race-setup-card results-card">
+      <div class="loading-top-row">
+        <div class="loading-brand-pill">
+          <span class="brand-dot"></span>
+          <span class="loading-tag">BANDIERA A SCACCHI • RISULTATI</span>
+        </div>
+      </div>
+      <div id="race-results-summary" class="results-summary"></div>
+      <table class="results-table">
+        <thead><tr><th>Pilota</th><th>Giri</th><th>Miglior giro</th></tr></thead>
+        <tbody id="race-results-rows"></tbody>
+      </table>
+      <div class="race-setup-actions">
+        <button type="button" id="btn-results-setup" class="secondary-btn">🏁 Nuova gara (impostazioni)</button>
+        <button type="button" id="btn-results-retry" class="start-race-btn">🔁 Corri di nuovo</button>
+      </div>
+    </div>
+  </div>
+
   <!-- CANVAS 3D DEL SIMULATORE -->
   <canvas id="sim-canvas"></canvas>
 
@@ -97,7 +203,7 @@
       <!-- 1. Riquadrino Versione -->
       <div class="hud-box version-box" title="Versione attuale dell'applicazione">
         <span class="box-label">VERSIONE</span>
-        <span id="hud-version-val" class="box-value">v1.4.4</span>
+        <span id="hud-version-val" class="box-value">v–</span>
       </div>
 
       <!-- 2. Riquadrino 3 Modalità Risoluzione Grafica con indicatore attivo -->
@@ -161,6 +267,10 @@
   <aside class="left-telemetry-panel">
     <div class="timing-card">
       <div class="card-header-strip">⏱️ CRONOMETRO KYOSHO IC-TAG</div>
+      <div class="timing-row race-status-row">
+        <span id="hud-race-mode">PROVE LIBERE</span>
+        <strong id="hud-race-progress" class="time-digital">--</strong>
+      </div>
       <div class="timing-row">
         <span>GIRO ATTUALE (<strong id="hud-lap-num">0</strong>)</span>
         <strong id="hud-cur-lap" class="time-digital">0.00s</strong>
@@ -190,6 +300,9 @@
         </button>
         <button type="button" id="btn-marshal-reset" class="utility-btn" title="Il commissario rimette dritta la Mini-Z in pista (Tasto R)">
           🦺 Commissario (R)
+        </button>
+        <button type="button" id="btn-race-settings" class="utility-btn" title="Torna alle impostazioni gara (modello, pista, giri, avversari)">
+          🏁 Nuova Gara
         </button>
         <button type="button" id="btn-open-workbench-quick" class="utility-btn bench-shortcut-btn" title="Porta l'auto sul Banco Lavoro per regolare assetto, gomme, batterie e vedere il telaio MR-04">
           🔧 Banco Lavoro
@@ -631,23 +744,16 @@
   </div>
 
   <script>
-    if ('caches' in window) {
-      caches.keys().then((keys) => {
-        keys.forEach((k) => {
-          if (k !== 'miniz-club-sim-v1.4.1') caches.delete(k);
-        });
-      }).catch(() => {});
-    }
+    // Quando un nuovo service worker prende il controllo ricarica la pagina, ma solo se la pagina
+    // era già controllata da uno precedente: alla prima visita non deve ricaricare a metà caricamento
     if ('serviceWorker' in navigator) {
+      const hadController = Boolean(navigator.serviceWorker.controller);
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (refreshing) return;
+        if (refreshing || !hadController) return;
         refreshing = true;
         window.location.reload();
       });
-      navigator.serviceWorker.getRegistrations().then((regs) => {
-        regs.forEach((r) => r.update());
-      }).catch(() => {});
     }
   </script>
   <script type="module" src="/src/main.js"></script>

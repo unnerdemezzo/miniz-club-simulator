@@ -1,4 +1,5 @@
-const CACHE_NAME = 'miniz-club-sim-v1.4.4';
+// La versione arriva dall'URL di registrazione (/sw.js?v=x.y.z): ogni nuova versione installa un nuovo service worker
+const CACHE_NAME = 'miniz-club-sim-v' + (new URL(self.location.href).searchParams.get('v') || 'dev');
 const CORE_ASSETS = [
   '/',
   '/index.html',

@@ -21,6 +21,7 @@ import { ROST } from './club/config.js';
 import { keepDriverCarVisible } from './club/driver-framing.js';
 import { createQualityComposer } from './club/graphics-quality.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { APP_VERSION } from './version.js';
 
 class MiniZSimulatorApp {
   constructor() {
@@ -59,6 +60,15 @@ class MiniZSimulatorApp {
     // Evento installazione PWA
     this.deferredInstallPrompt = null;
 
+    // Fase della sessione: 'setup' (schermata impostazioni, auto non in pista) → 'countdown' (semaforo)
+    // → 'racing' → 'finished' (bandiera a scacchi). Si parte sempre dalle impostazioni.
+    this.racePhase = 'setup';
+    this.raceStartTime = 0;
+    this.raceElapsedSec = 0;
+    this.raceTimeExpired = false;
+    this.sessionBestLapSec = null;
+    this.countdownTimers = [];
+
     this.initPWA();
     this.initThreeScene();
     this.bootSimulator();
@@ -67,21 +77,41 @@ class MiniZSimulatorApp {
   initPWA() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register('/sw.js')
+        .register(`/sw.js?v=${encodeURIComponent(APP_VERSION)}`)
         .then((reg) => reg.update().catch(() => {}))
         .catch(() => {});
     }
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredInstallPrompt = e;
+      this.updateInstallVisibility();
     });
+    window.addEventListener('appinstalled', () => {
+      this.deferredInstallPrompt = null;
+      this.updateInstallVisibility();
+    });
+  }
+
+  isRunningAsInstalledApp() {
+    return (
+      window.matchMedia?.('(display-mode: standalone)').matches ||
+      window.matchMedia?.('(display-mode: window-controls-overlay)').matches ||
+      window.navigator.standalone === true
+    );
+  }
+
+  // Il pulsante "Installa App" compare nella schermata iniziale finché l'app non è installata
+  // (è sempre facoltativo). Nella barra in alto e nel menu Sistema resta dov'era.
+  updateInstallVisibility() {
+    const box = document.getElementById('setup-install-box');
+    if (box) box.classList.toggle('hidden', this.isRunningAsInstalledApp());
   }
 
   initThreeScene() {
     this.canvas = document.getElementById('sim-canvas');
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x14171f);
-    this.scene.fog = new THREE.Fog(0x14171f, 18, 34);
+    this.scene.background = new THREE.Color(0x1a1c21);
+    this.scene.fog = new THREE.Fog(0x1a1c21, 18, 34);
 
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.03, 50);
 
@@ -92,7 +122,7 @@ class MiniZSimulatorApp {
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.NeutralToneMapping;
-    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.toneMappingExposure = 1.1;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -107,37 +137,62 @@ class MiniZSimulatorApp {
     this.orbit.maxPolarAngle = Math.PI * 0.49;
     this.orbit.enabled = false;
 
-    // Illuminazione realistica della sala del club (identica a Slot-Car)
-    const hemi = new THREE.HemisphereLight(0xfff6e8, 0x3a3228, 0.72);
+    // Illuminazione della sala del club: pannelli LED a soffitto (luce neutra ~4500 K), niente dominanti
+    // marroni o blu. La luce emisferica ha il "terreno" grigio ardesia come la moquette, non marrone.
+    const hemi = new THREE.HemisphereLight(0xf6f3ee, 0x34373d, 0.95);
     hemi.position.set(2.5, 3.3, -1.8);
     this.scene.add(hemi);
 
-    this.mainCeilingLight = new THREE.DirectionalLight(0xfff5e4, 2.35);
+    // Luce principale dal soffitto: ombre della sala (tavolo, persone, arredi), inquadrata sul solo tavolo pista
+    // (10,5 × 6,2 m) invece che su 17 × 14 m, così ogni pixel d'ombra copre circa 5 mm invece di 8.
+    this.mainCeilingLight = new THREE.DirectionalLight(0xfff4e6, 1.75);
     this.mainCeilingLight.position.set(3.4, 3.2, 0.8);
     this.mainCeilingLight.target.position.set(2.4, 0, -1.9);
     this.mainCeilingLight.castShadow = true;
     this.mainCeilingLight.shadow.mapSize.set(2048, 2048);
-    this.mainCeilingLight.shadow.camera.left = -8.6;
-    this.mainCeilingLight.shadow.camera.right = 8.6;
-    this.mainCeilingLight.shadow.camera.top = 7.0;
-    this.mainCeilingLight.shadow.camera.bottom = -7.0;
+    this.mainCeilingLight.shadow.camera.left = -6.4;
+    this.mainCeilingLight.shadow.camera.right = 6.4;
+    this.mainCeilingLight.shadow.camera.top = 5.2;
+    this.mainCeilingLight.shadow.camera.bottom = -5.2;
     this.mainCeilingLight.shadow.camera.near = 0.5;
-    this.mainCeilingLight.shadow.camera.far = 7.5;
+    this.mainCeilingLight.shadow.camera.far = 8.5;
     this.mainCeilingLight.shadow.bias = -0.0003;
     this.mainCeilingLight.shadow.normalBias = 0.012;
     this.scene.add(this.mainCeilingLight);
     this.scene.add(this.mainCeilingLight.target);
 
-    const fill1 = new THREE.PointLight(0xffe9c8, 3.5, 13, 1.4);
+    // Quota della stessa luce dedicata all'ombra nitida della Mini-Z: stessa direzione, frustum di 1,4 m
+    // che segue l'auto (circa 1,4 mm per pixel). La somma delle due intensità resta quella di prima.
+    this.carShadowLight = new THREE.DirectionalLight(0xfff4e6, 0.75);
+    this.carShadowLight.castShadow = true;
+    this.carShadowLight.shadow.mapSize.set(1024, 1024);
+    this.carShadowLight.shadow.camera.left = -0.7;
+    this.carShadowLight.shadow.camera.right = 0.7;
+    this.carShadowLight.shadow.camera.top = 0.7;
+    this.carShadowLight.shadow.camera.bottom = -0.7;
+    this.carShadowLight.shadow.camera.near = 0.1;
+    this.carShadowLight.shadow.camera.far = 6;
+    this.carShadowLight.shadow.bias = -0.0002;
+    this.carShadowLight.shadow.normalBias = 0.002;
+    this.carShadowLightOffset = new THREE.Vector3().subVectors(
+      this.mainCeilingLight.position,
+      this.mainCeilingLight.target.position
+    );
+    this.scene.add(this.carShadowLight);
+    this.scene.add(this.carShadowLight.target);
+
+    const fill1 = new THREE.PointLight(0xfff0dc, 6.0, 14, 1.4);
     fill1.position.set(-1.5, 2.8, -2.0);
     this.scene.add(fill1);
 
-    const fill2 = new THREE.PointLight(0xe6f0ff, 3.5, 13, 1.4);
+    const fill2 = new THREE.PointLight(0xf1f4ff, 6.0, 14, 1.4);
     fill2.position.set(6.2, 2.8, -2.0);
     this.scene.add(fill2);
 
-    // Post-processing di qualità (GTAO Ambient Occlusion + Bloom + OutputPass come in Slot-Car)
-    this.qualityComposer = createQualityComposer(this.renderer, this.scene, this.camera, this.mainCeilingLight);
+    // Profili di qualità: risoluzione, ombre e dimensione delle shadow map (nessun post-processing per ora)
+    this.qualityComposer = createQualityComposer(this.renderer, this.scene, this.camera, this.mainCeilingLight, [
+      this.carShadowLight
+    ]);
 
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -187,17 +242,14 @@ class MiniZSimulatorApp {
     // Inizializza l'interfaccia utente e il menu a 5 schede
     this.initUI();
 
-    setProgress(100, 'Pista RCP pronta! Pilota sul palco!');
+    setProgress(100, 'Sala pronta! Scegli auto, pista e tipo di gara.');
+    this.showRaceSetup();
     setTimeout(() => {
       const loader = document.getElementById('loading-screen');
       if (loader) {
         loader.style.opacity = '0';
         setTimeout(() => loader.classList.add('hidden'), 450);
       }
-      this.sound.speak(
-        'Benvenuti nella Mini-Z Club Arena! Pilota sul palco di guida con la Ferrari 499P, pista RCP libera!',
-        'force'
-      );
     }, 350);
 
     // Avvia il ciclo principale a 60+ FPS
@@ -243,8 +295,10 @@ class MiniZSimulatorApp {
 
   initUI() {
     // Versione app
-    const verEl = document.getElementById('hud-version-val');
-    if (verEl) verEl.textContent = `v${this.profileManager.state.appVersion}`;
+    for (const id of ['hud-version-val', 'loading-version', 'setup-version']) {
+      const verEl = document.getElementById(id);
+      if (verEl) verEl.textContent = `v${APP_VERSION}`;
+    }
 
     // Pulsanti 3 modalità di risoluzione grafica
     document.querySelectorAll('.res-mode-btn').forEach((btn) => {
@@ -259,16 +313,24 @@ class MiniZSimulatorApp {
         this.deferredInstallPrompt.prompt();
         await this.deferredInstallPrompt.userChoice;
         this.deferredInstallPrompt = null;
+      } else if (this.isRunningAsInstalledApp()) {
+        alert('✅ Mini-Z Club Simulator è già installato su questo dispositivo.');
       } else {
         alert(
-          '📲 Per installare subito Mini-Z Club Simulator sul tuo computer:\n\n' +
+          '📲 Per installare Mini-Z Club Simulator (facoltativo):\n\n' +
           '• Su Chrome o Edge clicca sull\'icona "Installa Mini-Z Club Simulator" (schermo con freccia) a destra nella barra degli indirizzi in alto!\n' +
+          '• Su iPhone/iPad (Safari): tasto Condividi → "Aggiungi alla schermata Home".\n' +
           '• Se l\'hai già installata, la trovi direttamente sul tuo Desktop o nel menu Start.'
         );
       }
     };
     document.getElementById('btn-install-app')?.addEventListener('click', handleInstallClick);
     document.getElementById('btn-install-app-menu')?.addEventListener('click', handleInstallClick);
+    document.getElementById('btn-install-app-start')?.addEventListener('click', handleInstallClick);
+    this.updateInstallVisibility();
+
+    // Schermata impostazioni gara (avvio) e risultati
+    this.initRaceSetupUI();
 
     // Apertura/chiusura Menu Unico
     const menuModal = document.getElementById('main-menu-modal');
@@ -301,6 +363,7 @@ class MiniZSimulatorApp {
     document.getElementById('btn-close-menu')?.addEventListener('click', closeMenu);
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') {
+        if (this.racePhase === 'setup') return;
         if (!menuModal.classList.contains('hidden')) closeMenu();
         else if (this.replay.isActive) this.stopReplayMode();
         else openMenu();
@@ -320,14 +383,16 @@ class MiniZSimulatorApp {
     });
 
     // Pulsanti Riavvia Gara (Spazio), Chiama Commissario (R) e Togli Carrozzeria rapido
-    this.controller.onMarshalPressed = () => this.triggerMarshalReset();
-    this.controller.onRestartRacePressed = () => this.restartRace();
-    this.controller.onCameraPressed = () => this.cycleDriveCameraMode();
-    this.controller.onReplayPressed = () => this.toggleReplayMode();
+    const onTrack = () => this.racePhase !== 'setup';
+    this.controller.onMarshalPressed = () => onTrack() && this.triggerMarshalReset();
+    this.controller.onRestartRacePressed = () => onTrack() && this.restartRace();
+    this.controller.onCameraPressed = () => onTrack() && this.cycleDriveCameraMode();
+    this.controller.onReplayPressed = () => onTrack() && this.toggleReplayMode();
     this.controller.onDevicesChanged = () => this.refreshGamepadDeviceSelect();
 
     document.getElementById('btn-restart-race')?.addEventListener('click', () => this.restartRace());
     document.getElementById('btn-marshal-reset')?.addEventListener('click', () => this.triggerMarshalReset());
+    document.getElementById('btn-race-settings')?.addEventListener('click', () => this.showRaceSetup());
     document.getElementById('btn-Toggle-naked-chassis')?.addEventListener('click', () => this.toggleNakedChassis());
     document.getElementById('btn-refill-batteries')?.addEventListener('click', () => {
       this.car?.refillBatteries();
@@ -496,19 +561,310 @@ class MiniZSimulatorApp {
   }
 
   restartRace() {
+    if (!this.trackData || !this.car || this.racePhase === 'setup') return;
+    this.beginRace();
+  }
+
+  // ================= SESSIONE DI GARA: IMPOSTAZIONI → SEMAFORO → GARA → RISULTATI =================
+
+  getRaceSettings() {
+    const st = this.profileManager.state;
+    const rs = st.raceSettings || {};
+    return {
+      mode: ['practice', 'laps', 'time'].includes(rs.mode) ? rs.mode : 'time',
+      laps: Number(rs.laps) || 10,
+      minutes: Number(rs.minutes) || 5
+    };
+  }
+
+  initRaceSetupUI() {
+    const fill = (id, list) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = list.map((x) => `<option value="${x.id}">${x.name}</option>`).join('');
+    };
+    fill('setup-sel-body', CAR_BODIES);
+    fill('setup-sel-chassis', CHASSIS_LIST);
+    fill('setup-sel-track', TRACK_LAYOUTS);
+
+    // Cambiando modello o pista si mostra il telaio salvato nel profilo di quella combinazione
+    const syncChassisFromProfile = () => {
+      const bodyId = document.getElementById('setup-sel-body')?.value;
+      const trackId = document.getElementById('setup-sel-track')?.value;
+      const prof = this.profileManager.state.autoProfiles[`${bodyId}__${trackId}`];
+      const chassisSel = document.getElementById('setup-sel-chassis');
+      if (chassisSel) {
+        chassisSel.value =
+          prof?.carSetup?.chassisId || (trackId === 'arena_drift' ? 'ma030_awd' : CHASSIS_LIST[0]?.id);
+      }
+    };
+    document.getElementById('setup-sel-body')?.addEventListener('change', syncChassisFromProfile);
+    document.getElementById('setup-sel-track')?.addEventListener('change', syncChassisFromProfile);
+
+    document.querySelectorAll('.setup-mode-btn').forEach((btn) => {
+      btn.addEventListener('click', () => this.setSetupMode(btn.dataset.raceMode));
+    });
+
+    document.getElementById('btn-start-race')?.addEventListener('click', () => this.startRaceFromSetup());
+    document.getElementById('btn-results-retry')?.addEventListener('click', () => {
+      document.getElementById('race-results')?.classList.add('hidden');
+      this.beginRace();
+    });
+    document.getElementById('btn-results-setup')?.addEventListener('click', () => this.showRaceSetup());
+  }
+
+  setSetupMode(mode) {
+    document.querySelectorAll('.setup-mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.raceMode === mode));
+    document.getElementById('setup-laps-wrap')?.classList.toggle('hidden', mode !== 'laps');
+    document.getElementById('setup-minutes-wrap')?.classList.toggle('hidden', mode !== 'time');
+    const desc = document.getElementById('setup-mode-desc');
+    if (desc) {
+      desc.textContent =
+        mode === 'practice'
+          ? 'Sessione libera senza fine: giri cronometrati e record della pista.'
+          : mode === 'laps'
+            ? 'Vince chi completa per primo i giri previsti.'
+            : 'Allo scadere del tempo, la gara finisce quando tagli il traguardo (come nei club RC).';
+    }
+    this.setupSelectedMode = mode;
+  }
+
+  showRaceSetup() {
+    const st = this.profileManager.state;
+    const rs = this.getRaceSettings();
+    this.clearCountdown();
+    if (this.replay?.isActive) this.stopReplayMode();
+    document.getElementById('main-menu-modal')?.classList.add('hidden');
+    document.getElementById('race-results')?.classList.add('hidden');
+
+    const setVal = (id, v) => {
+      const el = document.getElementById(id);
+      if (el) el.value = String(v);
+    };
+    setVal('setup-sel-body', st.currentBodyId);
+    setVal('setup-sel-track', st.currentTrackId);
+    const prof = this.profileManager.getActiveProfile(this.bodyNamesMap, this.trackNamesMap);
+    setVal('setup-sel-chassis', prof.carSetup.chassisId);
+    setVal('setup-sel-ai', st.aiLevel || 'club');
+    setVal('setup-sel-laps', rs.laps);
+    setVal('setup-sel-minutes', rs.minutes);
+    const rev = document.getElementById('setup-chk-reverse');
+    if (rev) rev.checked = Boolean(st.reverseTrack);
+    const comm = document.getElementById('setup-chk-commentary');
+    if (comm) comm.checked = st.audio.commentaryEnabled !== false;
+    this.setSetupMode(rs.mode);
+    this.updateInstallVisibility();
+
+    // Niente auto in pista finché non si preme "Inizia": sala vista dal palco con il tavolo vuoto
+    this.racePhase = 'setup';
+    this.timerRunning = false;
+    if (this.car) {
+      if (this.car.onWorkbench) this.car.setWorkbenchMode(false);
+      this.car.rootGroup.visible = false;
+    }
+    if (this.club) {
+      this.club.aiPaused = true;
+      this.club.aiCarsGroup.visible = false;
+    }
+    this.sound.setMotorActive(false);
+    this.setDriveCameraMode('stand_normal');
+    document.body.classList.add('in-race-setup');
+    document.getElementById('race-setup-screen')?.classList.remove('hidden');
+  }
+
+  async startRaceFromSetup() {
+    const startBtn = document.getElementById('btn-start-race');
+    if (startBtn?.disabled) return;
+    if (startBtn) startBtn.disabled = true;
+    try {
+      const st = this.profileManager.state;
+      const val = (id) => document.getElementById(id)?.value;
+      st.currentBodyId = val('setup-sel-body') || st.currentBodyId;
+      st.currentTrackId = val('setup-sel-track') || st.currentTrackId;
+      st.reverseTrack = Boolean(document.getElementById('setup-chk-reverse')?.checked);
+      st.audio.commentaryEnabled = Boolean(document.getElementById('setup-chk-commentary')?.checked);
+      st.raceSettings = {
+        mode: this.setupSelectedMode || 'time',
+        laps: Number(val('setup-sel-laps')) || 10,
+        minutes: Number(val('setup-sel-minutes')) || 5
+      };
+      this.profileManager.save();
+
+      const prof = this.profileManager.updateActiveCarSetup(
+        { chassisId: val('setup-sel-chassis') },
+        this.bodyNamesMap,
+        this.trackNamesMap
+      );
+      this.loadActiveTrack(false);
+      await this.car.applySetup(prof.carSetup);
+
+      const aiLevel = val('setup-sel-ai') || 'club';
+      st.aiLevel = aiLevel;
+      this.profileManager.save();
+      this.club.setAiDifficulty(aiLevel);
+      document.querySelectorAll('.ai-mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.ai === aiLevel));
+      const aiSel = document.getElementById('sel-ai-difficulty');
+      if (aiSel) aiSel.value = aiLevel;
+
+      this.refreshMenuUI();
+      document.getElementById('race-setup-screen')?.classList.add('hidden');
+      document.body.classList.remove('in-race-setup');
+      this.beginRace();
+    } finally {
+      if (startBtn) startBtn.disabled = false;
+    }
+  }
+
+  clearCountdown() {
+    this.countdownTimers.forEach((t) => clearTimeout(t));
+    this.countdownTimers = [];
+    document.getElementById('race-countdown')?.classList.add('hidden');
+  }
+
+  // Griglia di partenza + semaforo: l'auto e gli avversari sono fermi finché non si accende il verde
+  beginRace() {
     if (!this.trackData || !this.car) return;
+    this.clearCountdown();
+    if (this.replay.isActive) this.stopReplayMode();
+    document.getElementById('race-results')?.classList.add('hidden');
+
     this.lapNumber = 0;
     this.lastLapSec = null;
     this.currentLapSec = 0;
     this.timerRunning = false;
+    this.raceElapsedSec = 0;
+    this.raceTimeExpired = false;
+    this.sessionBestLapSec = null;
     this.club.lastBridgeSide = null;
     this.club.lapArmed = false;
     this.club.spawnAiCars();
+    this.club.aiCars.forEach((ai) => {
+      ai.speed = 0;
+    });
+    this.club.aiPaused = true;
     this.club.updateBridgeDisplay(0, null, this.bestLapSec);
     this.updateTimingHUD();
+    if (this.car.onWorkbench) this.car.setWorkbenchMode(false);
+    this.car.rootGroup.visible = true;
     this.car.resetOnTrack(this.trackData.startX, this.trackData.startZ, this.trackData.startHeading);
     this.replay.clear();
-    this.sound.speak('Gara riavviata! Mini-Z allineata sulla griglia di partenza, cronometro azzerato!', 'high');
+    this.sound.setMotorActive(true);
+    this.racePhase = 'countdown';
+
+    const rs = this.getRaceSettings();
+    const trackName = this.trackNamesMap[this.profileManager.state.currentTrackId] || 'pista del club';
+    const intro =
+      rs.mode === 'practice'
+        ? `Prove libere su ${trackName}.`
+        : rs.mode === 'laps'
+          ? `Gara di ${rs.laps} giri su ${trackName}. Piloti pronti.`
+          : `Gara di ${rs.minutes} minuti su ${trackName}. Piloti pronti.`;
+    this.sound.speak(intro, 'force');
+
+    const box = document.getElementById('race-countdown');
+    const txt = document.getElementById('race-countdown-text');
+    const show = (label, go = false) => {
+      if (!box || !txt) return;
+      txt.textContent = label;
+      box.classList.toggle('go', go);
+      box.classList.remove('hidden');
+    };
+    const steps = ['3', '2', '1'];
+    const t0 = 1600;
+    steps.forEach((label, i) => {
+      this.countdownTimers.push(
+        setTimeout(() => {
+          show(label);
+          this.sound.playStartBeep(false);
+        }, t0 + i * 1000)
+      );
+    });
+    this.countdownTimers.push(
+      setTimeout(() => {
+        show('VIA!', true);
+        this.sound.playStartBeep(true);
+        this.racePhase = 'racing';
+        this.raceStartTime = performance.now();
+        this.club.aiPaused = false;
+        // Chi è in griglia dietro la linea non ha ancora "completato" il giro quando la attraversa
+        this.club.aiCars.forEach((ai) => {
+          ai.raceStartLaps = ai.laps + (ai.t > 0.5 ? 1 : 0);
+        });
+      }, t0 + steps.length * 1000)
+    );
+    this.countdownTimers.push(
+      setTimeout(() => document.getElementById('race-countdown')?.classList.add('hidden'), t0 + steps.length * 1000 + 900)
+    );
+  }
+
+  finishRace() {
+    this.racePhase = 'finished';
+    this.timerRunning = false;
+    this.club.aiPaused = true;
+    this.sound.speak('Bandiera a scacchi! Gara conclusa.', 'high');
+
+    const fmt = (t) => (t !== null && t !== undefined ? `${t.toFixed(2)}s` : '--.--');
+    const playerLaps = Math.max(0, this.lapNumber - 1);
+    const rows = [
+      { name: 'Tu', laps: playerLaps, best: this.sessionBestLapSec, isPlayer: true },
+      ...this.club.aiCars.map((ai) => ({
+        name: ai.driver.name,
+        laps: Math.max(0, ai.laps - (ai.raceStartLaps ?? ai.laps)),
+        best: ai.bestLap,
+        isPlayer: false
+      }))
+    ];
+    if (this.club.aiLevel === 'none') rows.length = 1;
+    rows.sort((a, b) => b.laps - a.laps || (a.best ?? 999) - (b.best ?? 999));
+
+    const totalMin = Math.floor(this.raceElapsedSec / 60);
+    const totalSec = (this.raceElapsedSec % 60).toFixed(2).padStart(5, '0');
+    const pos = rows.findIndex((r) => r.isPlayer) + 1;
+    const summary = document.getElementById('race-results-summary');
+    if (summary) {
+      summary.innerHTML =
+        `<strong>${playerLaps} giri</strong> in <strong>${totalMin}:${totalSec}</strong> • ` +
+        `miglior giro <strong>${fmt(this.sessionBestLapSec)}</strong>` +
+        (rows.length > 1 ? ` • posizione <strong>${pos}ª su ${rows.length}</strong>` : '');
+    }
+    const tbody = document.getElementById('race-results-rows');
+    if (tbody) {
+      tbody.innerHTML = rows
+        .map(
+          (r, i) =>
+            `<tr class="${r.isPlayer ? 'is-player' : ''}"><td>${i + 1}. ${r.name}</td><td>${r.laps}</td><td>${fmt(r.best)}</td></tr>`
+        )
+        .join('');
+    }
+    setTimeout(() => {
+      if (this.racePhase === 'finished') document.getElementById('race-results')?.classList.remove('hidden');
+    }, 1800);
+  }
+
+  updateRaceHUD() {
+    const modeEl = document.getElementById('hud-race-mode');
+    const progEl = document.getElementById('hud-race-progress');
+    if (!modeEl || !progEl) return;
+    const rs = this.getRaceSettings();
+    const fmtClock = (sec) => {
+      const v = Math.max(0, sec);
+      return `${Math.floor(v / 60)}:${Math.floor(v % 60).toString().padStart(2, '0')}`;
+    };
+    const done = Math.max(0, this.lapNumber - 1);
+    if (this.racePhase === 'countdown') {
+      modeEl.textContent = 'PARTENZA';
+      progEl.textContent = '--';
+    } else if (rs.mode === 'practice') {
+      modeEl.textContent = 'PROVE LIBERE';
+      progEl.textContent = fmtClock(this.raceElapsedSec);
+    } else if (rs.mode === 'laps') {
+      modeEl.textContent = this.racePhase === 'finished' ? 'FINE GARA' : 'GIRI';
+      progEl.textContent = `${Math.min(done, rs.laps)}/${rs.laps}`;
+    } else {
+      const left = rs.minutes * 60 - this.raceElapsedSec;
+      modeEl.textContent =
+        this.racePhase === 'finished' ? 'FINE GARA' : this.raceTimeExpired ? 'ULTIMO GIRO' : 'TEMPO';
+      progEl.textContent = fmtClock(left);
+    }
   }
 
   refreshGamepadDeviceSelect() {
@@ -862,6 +1218,19 @@ class MiniZSimulatorApp {
     const chkRev = document.getElementById('chk-reverse-track');
     if (chkRev) chkRev.checked = Boolean(state.reverseTrack);
 
+    // Scheda 5: i controlli audio mostrano i valori salvati (prima restavano sui valori fissi dell'HTML)
+    const chkComm = document.getElementById('chk-commentary-enabled');
+    if (chkComm) chkComm.checked = state.audio.commentaryEnabled !== false;
+    const setAudioSlider = (id, valId, v) => {
+      const pct = Math.round((v ?? 0) * 100);
+      const el = document.getElementById(id);
+      if (el) el.value = pct;
+      const vEl = document.getElementById(valId);
+      if (vEl) vEl.textContent = `${pct}%`;
+    };
+    setAudioSlider('rng-vol-comm', 'val-vol-comm', state.audio.commentaryVolume ?? 0.95);
+    setAudioSlider('rng-vol-motor', 'val-vol-motor', state.audio.motorVolume ?? 0.65);
+
     // Scheda 2: Valori Banco Box e descrizioni
     const setSelectAndDesc = (selId, descId, val, list) => {
       const sel = document.getElementById(selId);
@@ -1007,6 +1376,14 @@ class MiniZSimulatorApp {
     keepDriverCarVisible(this.camera, look, carPos);
   }
 
+  // L'ombra nitida segue l'auto: il frustum resta centrato sotto la Mini-Z ovunque sia (pista, replay)
+  updateCarShadowLight() {
+    if (!this.carShadowLight || !this.car) return;
+    const p = this.car.rootGroup.position;
+    this.carShadowLight.target.position.copy(p);
+    this.carShadowLight.position.copy(p).add(this.carShadowLightOffset);
+  }
+
   loop(now) {
     requestAnimationFrame((t) => this.loop(t));
 
@@ -1029,12 +1406,14 @@ class MiniZSimulatorApp {
       }
     }
 
-    // 2. Lettura Joypad / Radiocomando / Tastiera
-    const input = this.controller.update(dt);
+    // 2. Lettura Joypad / Radiocomando / Tastiera (in griglia, al semaforo e dopo la bandiera l'auto non risponde)
+    const rawInput = this.controller.update(dt);
+    const input =
+      this.racePhase === 'racing' ? rawInput : { ...rawInput, steer: 0, throttle: 0, brake: 0 };
 
     // Aggiorna barre di test e indicatori controller
-    const steerPct = clamp(50 + input.steer * 45, 2, 98);
-    const thrPct = clamp(Math.max(input.throttle, input.brake) * 100, 0, 100);
+    const steerPct = clamp(50 + rawInput.steer * 45, 2, 98);
+    const thrPct = clamp(Math.max(rawInput.throttle, rawInput.brake) * 100, 0, 100);
     const hudSteer = document.getElementById('hud-steer-bar');
     const hudThr = document.getElementById('hud-thr-bar');
     const menuSteer = document.getElementById('menu-test-steer');
@@ -1053,8 +1432,27 @@ class MiniZSimulatorApp {
       if (menuPadBanner) menuPadBanner.textContent = `✅ Joypad collegato: ${this.controller.connectedGamepadName}`;
     }
 
+    // Schermata impostazioni gara: la sala vive (persone animate) ma sul tavolo non c'è nessuna auto
+    if (this.racePhase === 'setup') {
+      this.updateDriverCamera(dt);
+      this.club.animateCharacters(now * 0.001, this.car.rootGroup.position, this.sound.isSpeaking, dt, this.camera.position, 0);
+      this.qualityComposer.render();
+      return;
+    }
+
+    if (this.racePhase === 'racing') {
+      this.raceElapsedSec = (now - this.raceStartTime) / 1000;
+      const rs = this.getRaceSettings();
+      if (rs.mode === 'time' && !this.raceTimeExpired && this.raceElapsedSec >= rs.minutes * 60) {
+        this.raceTimeExpired = true;
+        this.sound.speak('Tempo scaduto! Ultimo giro, la gara finisce sul traguardo.', 'high');
+      }
+    }
+    this.updateRaceHUD();
+
     // 3. Se siamo in modalità Replay Multicamera, riproduce il Replay
     if (this.replay.isActive) {
+      this.sound.setMotorActive(false);
       const rFrame = this.replay.update(dt, this.camera, this.trackData, this.club.driverEyePos);
       if (rFrame) {
         this.car.applyReplayFrame(rFrame);
@@ -1069,6 +1467,7 @@ class MiniZSimulatorApp {
         this.camera.position,
         input.throttle
       );
+      this.updateCarShadowLight();
       this.qualityComposer.render();
       return;
     }
@@ -1094,13 +1493,14 @@ class MiniZSimulatorApp {
         );
 
         // Controllo passaggio sotto il Ponte di Cronometraggio IC-Tag
-        const crossEvent = this.trackData.checkLapCrossing(this.car.state.x, this.car.state.z);
+        const crossEvent =
+          this.racePhase === 'racing' ? this.trackData.checkLapCrossing(this.car.state.x, this.car.state.z) : null;
         if (crossEvent === 'timer_started') {
           this.timerRunning = true;
           this.lapStartTime = now;
           this.lapNumber = 1;
           this.sound.playLapBeep(false);
-          this.sound.speak('Cronometro avviato! Primo giro lanciato!', 'normal');
+          this.sound.speak('Primo giro lanciato!', 'normal');
         } else if (crossEvent === 'lap_completed' && this.timerRunning) {
           const lapSec = (now - this.lapStartTime) / 1000;
           if (lapSec >= 2.8) {
@@ -1112,6 +1512,7 @@ class MiniZSimulatorApp {
               this.profileManager.state.currentBodyId
             );
             if (isRecord) this.bestLapSec = lapSec;
+            if (this.sessionBestLapSec === null || lapSec < this.sessionBestLapSec) this.sessionBestLapSec = lapSec;
 
             const delta = prevBest ? lapSec - prevBest : null;
             this.sound.playLapBeep(isRecord);
@@ -1120,6 +1521,13 @@ class MiniZSimulatorApp {
             this.lapNumber++;
             this.lapStartTime = now;
             this.club.updateBridgeDisplay(this.lapNumber, this.lastLapSec, this.bestLapSec);
+
+            const rs = this.getRaceSettings();
+            const lapsDone = this.lapNumber - 1;
+            if ((rs.mode === 'laps' && lapsDone >= rs.laps) || (rs.mode === 'time' && this.raceTimeExpired)) {
+              this.finishRace();
+              break;
+            }
           }
         }
       }
@@ -1133,7 +1541,9 @@ class MiniZSimulatorApp {
     this.updateTimingHUD();
 
     // Commenti dinamici in gara (Traversi Drift o Velocità massima sul rettilineo sotto il palco)
-    if (this.car.state.slipAmount > 0.58 && Math.abs(this.car.state.speed) > 1.8 && Math.random() < dt * 0.45) {
+    if (this.racePhase !== 'racing') {
+      // niente commenti di colore fuori gara
+    } else if (this.car.state.slipAmount > 0.58 && Math.abs(this.car.state.speed) > 1.8 && Math.random() < dt * 0.45) {
       this.sound.commentDrift();
     } else if (
       this.car.state.z > 1.15 &&
@@ -1147,7 +1557,11 @@ class MiniZSimulatorApp {
     // 5. Aggiorna Suono Motore e Tachimetro (km/h reali + km/h in scala 1:27!)
     const activeSetup = this.profileManager.getActiveProfile(this.bodyNamesMap, this.trackNamesMap).carSetup;
     const motorSpec = MOTORS.find((m) => m.id === activeSetup.motorId) || MOTORS[2];
-    const speedRatio = Math.abs(this.car.state.speed) / motorSpec.maxSpeedMs;
+    // Il tono segue i giri del motore, non la velocità: con un pignone più grande, a parità di velocità il
+    // motore gira più piano (prima il 9T a fondo rettilineo fischiava più alto del 7T)
+    const pinion = PINIONS.find((p) => p.id === activeSetup.pinionId);
+    const speedRatio = Math.abs(this.car.state.speed) / (motorSpec.maxSpeedMs * (pinion?.speedMult || 1));
+    if (!this.replay.isActive) this.sound.setMotorActive(this.racePhase !== 'finished' || Math.abs(this.car.state.speed) > 0.05);
     this.sound.updateMotorSound(speedRatio, input.throttle, this.car.state.slipAmount, motorSpec);
 
     const realKmh = Math.abs(this.car.state.speed) * 3.6;
@@ -1174,7 +1588,7 @@ class MiniZSimulatorApp {
     if (tireBarEl) tireBarEl.style.width = `${tirePct}%`;
 
     // 6. Registra frame per il Replay Multicamera
-    this.replay.recordFrame(this.car.state, this.currentLapSec);
+    if (this.racePhase === 'racing') this.replay.recordFrame(this.car.state, this.currentLapSec);
 
     // 7. Aggiorna Visuale dal Palco e Personaggi animati nella sala
     this.updateDriverCamera(dt);
@@ -1187,6 +1601,7 @@ class MiniZSimulatorApp {
       input.throttle
     );
 
+    this.updateCarShadowLight();
     this.qualityComposer.render();
   }
 }

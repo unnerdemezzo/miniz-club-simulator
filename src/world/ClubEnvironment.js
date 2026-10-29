@@ -55,6 +55,7 @@ export class ClubEnvironment {
     this.monitor = null;
     this.stationDisplays = null;
     this.aiCars = [];
+    this.aiPaused = false;
 
     this.bridgeScreenCanvas = null;
     this.bridgeScreenCtx = null;
@@ -1572,7 +1573,8 @@ export class ClubEnvironment {
     };
   }
 
-  animateCharacters(timeSec, _carPos, _isSpeaking, dt = 1 / 60, cameraPos = null, playerThrottle = 0) {
+  animateCharacters(timeSec, _carPos, _isSpeaking, frameDt = 1 / 60, cameraPos = null, playerThrottle = 0) {
+    const dt = frameDt;
     if (this.podiumPilots[1] && cameraPos) {
       const d = cameraPos.distanceTo(this.driverEyePos);
       this.podiumPilots[1].visible = d > 0.55;
@@ -1592,6 +1594,8 @@ export class ClubEnvironment {
     }
 
     if (this.curve && this.aiCars.length > 0 && this.aiLevel !== 'none') {
+      // In griglia (impostazioni gara, semaforo, fine gara) le auto IA restano ferme ma posizionate
+      const dt = this.aiPaused ? 0 : frameDt;
       // Fisica e prestazioni IA identiche alle vere Mini-Z 1:27 su pista RCP, con veri errori umani in base al livello!
       // Principiante (~11.5 km/h, errori frequenti), Club (~14.5 km/h, qualche largo/scodata), Esperto (~17 km/h, errori rari), Pro (~19.5 km/h, precisissimo)
       const levelParams = {
