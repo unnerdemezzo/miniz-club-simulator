@@ -90,44 +90,45 @@ export class ClubEnvironment {
     this.buildDetailedClubRoom();
   }
 
+  // Riflessi come in Slot-Car (js/main.js): copia semplificata della sala con plafoniere molto luminose, pareti e
+  // pavimento grigi neutri e lo striscione rosso, centrata sul tavolo. È anche la luce ambiente della scena.
   setupEnvironmentMap(renderer) {
     const pmrem = new THREE.PMREMGenerator(renderer);
-    const envScene = new THREE.Scene();
-    envScene.background = new THREE.Color(0x1c1e24);
-    const panelMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.7, 3.9, 4.1) });
+    const es = new THREE.Scene();
+    const room = new THREE.Mesh(new THREE.BoxGeometry(16, 3.3, 13), new THREE.MeshBasicMaterial({ color: 0x3a3b3d, side: THREE.BackSide }));
+    es.add(room);
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(16, 13), new THREE.MeshBasicMaterial({ color: 0x46484b }));
+    fl.rotation.x = -Math.PI / 2;
+    fl.position.y = -1.6;
+    es.add(fl);
+    const lm = new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 8.8, 8.4) });
     for (let i = 0; i < 6; i++) {
       for (let j = 0; j < 4; j++) {
-        const p = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.55), panelMat);
-        p.position.set(-3.5 + i * 2.4, 3.2, -6.5 + j * 3.1);
-        p.rotation.x = Math.PI / 2;
-        envScene.add(p);
+        const l = new THREE.Mesh(new THREE.PlaneGeometry(1.18, 0.58), lm);
+        l.rotation.x = Math.PI / 2;
+        l.position.set(-5 + i * 1.95, 1.63, -3 + j * 2);
+        es.add(l);
       }
     }
-    const wallM = new THREE.MeshBasicMaterial({ color: 0x3b3832, side: THREE.BackSide });
-    const box = new THREE.Mesh(new THREE.BoxGeometry(16, 4, 13), wallM);
-    box.position.set(2.5, 1.2, -1.8);
-    envScene.add(box);
-    // Moquette agugliata grigio-ardesia neutra del piano tavolo (colore naturale e riposante, zero verde saturo)
-    const floorM = new THREE.MeshBasicMaterial({ color: 0x363b42 });
-    const fl = new THREE.Mesh(new THREE.PlaneGeometry(16, 13), floorM);
-    fl.rotation.x = -Math.PI / 2;
-    fl.position.set(2.5, -0.8, -1.8);
-    envScene.add(fl);
-    this.scene.environment = pmrem.fromScene(envScene, 0.035).texture;
+    const banner = new THREE.Mesh(new THREE.PlaneGeometry(5, 0.6), new THREE.MeshBasicMaterial({ color: 0x8a1016 }));
+    banner.position.set(0, 1.0, -6.45);
+    es.add(banner);
+    this.scene.environment = pmrem.fromScene(es, 0.02).texture;
     pmrem.dispose();
   }
 
-  // Moquette agugliata tecnica grigio-ardesia scuro (needle-felt professionale da club indoor RC, zero effetto erba finta)
+  // Moquette agugliata del piano tavolo fuori pista: grigio medio caldo (tortora), ben distinto sia dalla gomma
+  // antracite delle mattonelle RCP sia dal cemento grigio freddo del pavimento della sala (#8a8c8e)
   createGreenCarpetTexture() {
     return canvasTex(512, 512, (g, w, h) => {
       const r = rng(77);
-      g.fillStyle = '#383d45';
+      g.fillStyle = '#6a665f';
       g.fillRect(0, 0, w, h);
 
       // Fibre corte incrociate a bassissimo contrasto
       for (let i = 0; i < 55000; i++) {
         const v = (r() - 0.5) * 18;
-        g.fillStyle = `rgba(${56 + v},${61 + v},${69 + v},0.52)`;
+        g.fillStyle = `rgba(${106 + v},${102 + v},${95 + v},0.52)`;
         const x = r() * w, y = r() * h, a = r() * Math.PI;
         g.fillRect(x, y, 1 + Math.abs(Math.cos(a)) * 2, 1 + Math.abs(Math.sin(a)) * 2);
       }
@@ -216,7 +217,7 @@ export class ClubEnvironment {
     const RW = RX1 - RX0, RD = RZ1 - RZ0, RCX = (RX0 + RX1) / 2, RCZ = (RZ0 + RZ1) / 2;
     const BX = (BOARD.x0 + BOARD.x1) / 2, BZ = (BOARD.z0 + BOARD.z1) / 2, BW = BOARD.x1 - BOARD.x0, BD = BOARD.z1 - BOARD.z0;
 
-    // 1. TAVOLO PISTA: piano in moquette agugliata grigio-verde (come nei club veri), abbassato di TRACK_Y
+    // 1. TAVOLO PISTA: piano in moquette agugliata grigio tortora (come nei club veri), abbassato di TRACK_Y
     const T0 = TRACK_Y;
     const greenTopMat = new THREE.MeshStandardMaterial({
       map: this.greenCarpetTex,
