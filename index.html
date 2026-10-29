@@ -545,12 +545,18 @@
             <div class="ctrl-col">
               <h4>📡 Regolazioni Fini Radiocomando / Joypad</h4>
 
+              <div class="checkbox-pair">
+                <button type="button" id="btn-preset-joypad" class="secondary-btn">🎮 Preset Joypad</button>
+                <button type="button" id="btn-preset-radio" class="secondary-btn">📻 Preset Radiocomando</button>
+              </div>
+              <small>Joypad: più dolce al centro e sterzo progressivo con la velocità (lo stick ha poca corsa). Radiocomando: quasi lineare, curva uguale a ogni velocità. In entrambi lo stick a fondo dà l'angolo vero delle ruote.</small>
+
               <div class="slider-row">
                 <div class="slider-label-top">
                   <span>Esponenziale Sterzo (ST EXP)</span>
                   <strong id="val-steer-exp">-25%</strong>
                 </div>
-                <input type="range" id="rng-steer-exp" min="-80" max="80" step="5" />
+                <input type="range" id="rng-steer-exp" min="-90" max="80" step="5" />
                 <small>0% = lineare come una radio di serie. Negativo (es. -20%) = più dolce al centro per andare dritto in rettilineo.</small>
               </div>
 
@@ -561,6 +567,15 @@
                 </div>
                 <input type="range" id="rng-steer-dr" min="40" max="100" step="5" />
                 <small>100% = angolo massimo delle ruote (circa 26°). Abbassalo per una sterzata più larga e meno nervosa.</small>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Sterzo Progressivo con la Velocità</span>
+                  <strong id="val-steer-speed">65%</strong>
+                </div>
+                <input type="range" id="rng-steer-speed" min="0" max="100" step="5" />
+                <small>Lo stick a fondo dà sempre l'angolo vero delle ruote (26°). 0% = curva fissa come una radio. Più alto = in velocità il centro diventa più dolce e il limite di aderenza arriva a circa 70% di corsa invece che nei primi millimetri.</small>
               </div>
 
               <div class="slider-row">

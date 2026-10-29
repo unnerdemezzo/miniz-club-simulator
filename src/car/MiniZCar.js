@@ -583,9 +583,6 @@ export class MiniZCar {
 
     const trackGrip = trackData?.gripMultiplier ?? 1.0;
 
-    // Angolo di sterzo della "bicicletta" equivalente (media delle due ruote anteriori): a fine corsa ~26°,
-    // stima per una Mini-Z vera (25–30°, da confermare con un goniometro). Le ruote visibili usano l'Ackermann.
-    this.state.steerAngle = -input.steer * MAX_STEER_RAD;
 
     // Direzione longitudinale e laterale dell'auto
     const fwdX = Math.sin(this.state.heading);
@@ -716,12 +713,30 @@ export class MiniZCar {
 
     const absV = Math.abs(vForward);
     const directionSign = vForward >= -0.05 ? 1 : -1;
-    const tanSteer = Math.tan(this.state.steerAngle);
     const charSpeed = UNDERSTEER_CHAR_SPEED * Math.sqrt(Math.max(0.3, effectiveFrontGrip));
-    const kinematicYaw = (absV * tanSteer) / (REAL_SCALE.WHEELBASE * (1 + (absV * absV) / (charSpeed * charSpeed)));
-    const frontLateralLimit = FRONT_LATERAL_ACCEL * effectiveFrontGrip;
+    const understeerFactor = 1 + (absV * absV) / (charSpeed * charSpeed);
     // T-plate e differenziale cambiano quanto l'auto ruota al limite, non la geometria a bassa velocità
-    const gripYawLimit = (frontLateralLimit * tPlate.responsiveness * diff.rotationEase) / Math.max(0.25, absV);
+    const lateralLimit = FRONT_LATERAL_ACCEL * effectiveFrontGrip * tPlate.responsiveness * diff.rotationEase;
+    const gripYawLimit = lateralLimit / Math.max(0.25, absV);
+
+    // Angolo di sterzo della "bicicletta" equivalente (media delle due ruote anteriori): a fine corsa ~26°,
+    // stima per una Mini-Z vera (25–30°, da confermare con un goniometro). Le ruote visibili usano l'Ackermann.
+    // Sterzo progressivo con la velocità (regolabile nel menu, 0 = curva fissa come su una radio): lo stick a fondo
+    // porta sempre le ruote all'angolo vero, ma in velocità la curva diventa più dolce al centro, così il tratto
+    // utile fino al limite di aderenza occupa circa il 70% della corsa invece dei primi millimetri
+    const steerProgressive = clamp(input.steerSpeedLimit ?? 0, 0, 1);
+    const gripLimitAngle = Math.atan(
+      (REAL_SCALE.WHEELBASE * understeerFactor * lateralLimit) / Math.max(0.01, absV * absV)
+    );
+    const limitRatio = Math.min(1, gripLimitAngle / MAX_STEER_RAD);
+    // Esponenziale stile radio y = (1-a)x + a·x³, con a scelto perché il 70% di corsa dia l'angolo limite
+    const speedExpo = clamp((PROGRESSIVE_STICK_POINT - limitRatio) / (PROGRESSIVE_STICK_POINT - PROGRESSIVE_STICK_POINT ** 3), 0, 1) * steerProgressive;
+    const stick = clamp(input.steer, -1, 1);
+    const shapedSteer = (1 - speedExpo) * stick + speedExpo * stick * stick * stick;
+    this.state.steerAngle = -shapedSteer * MAX_STEER_RAD;
+
+    const tanSteer = Math.tan(this.state.steerAngle);
+    const kinematicYaw = (absV * tanSteer) / (REAL_SCALE.WHEELBASE * understeerFactor);
     const targetYawRate = gripYawLimit * Math.tanh(kinematicYaw / gripYawLimit) * directionSign;
 
     const yawDampingRate = 18.0 + 27.0 * centerBlend;
@@ -921,6 +936,8 @@ const MAX_STEER_RAD = (26 * Math.PI) / 180;
 const UNDERSTEER_CHAR_SPEED = 2.8;
 // Accelerazione laterale massima dell'anteriore con gomme di riferimento sul tappeto RCP (m/s², circa 0,9 g: con le gomme di serie si arriva a circa 1,2 g)
 const FRONT_LATERAL_ACCEL = 9.0;
+// Sterzo progressivo: frazione di corsa dello stick che, in velocità, porta l'anteriore al limite di aderenza
+const PROGRESSIVE_STICK_POINT = 0.7;
 // Carreggiata anteriore (distanza tra i centri delle ruote)
 const FRONT_TRACK = 0.066;
 
