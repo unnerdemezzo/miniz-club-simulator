@@ -551,7 +551,7 @@
                   <strong id="val-steer-exp">-25%</strong>
                 </div>
                 <input type="range" id="rng-steer-exp" min="-80" max="80" step="5" />
-                <small>Negativo (es. -25%) = più dolce al centro per andare dritto in rettilineo.</small>
+                <small>0% = lineare come una radio di serie. Negativo (es. -20%) = più dolce al centro per andare dritto in rettilineo.</small>
               </div>
 
               <div class="slider-row">
@@ -559,8 +559,8 @@
                   <span>Escursione Massima Sterzo (Dual Rate D/R)</span>
                   <strong id="val-steer-dr">100%</strong>
                 </div>
-                <input type="range" id="rng-steer-dr" min="45" max="125" step="5" />
-                <small>Limita o aumenta il raggio di sterzata massimo delle ruote anteriori.</small>
+                <input type="range" id="rng-steer-dr" min="40" max="100" step="5" />
+                <small>100% = angolo massimo delle ruote (circa 26°). Abbassalo per una sterzata più larga e meno nervosa.</small>
               </div>
 
               <div class="slider-row">
@@ -569,7 +569,7 @@
                   <strong id="val-servo-speed">100%</strong>
                 </div>
                 <input type="range" id="rng-servo-speed" min="35" max="150" step="5" />
-                <small>Rapidità con cui le ruote anteriori seguono la levetta del Joypad.</small>
+                <small>Rapidità con cui le ruote seguono la levetta, uguale in andata e al ritorno al centro.</small>
               </div>
 
               <div class="slider-row">
@@ -578,7 +578,16 @@
                   <strong id="val-thr-exp">0%</strong>
                 </div>
                 <input type="range" id="rng-thr-exp" min="-80" max="80" step="5" />
-                <small>Addolcisce o rende più aggressiva l'apertura del gas.</small>
+                <small>0% = lineare (metà grilletto, metà velocità). Negativo addolcisce, positivo rende più aggressiva l'apertura.</small>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Esponenziale Freno (BR EXP)</span>
+                  <strong id="val-brake-exp">0%</strong>
+                </div>
+                <input type="range" id="rng-brake-exp" min="-80" max="80" step="5" />
+                <small>0% = lineare. Negativo = più modulabile a inizio corsa. Il freno tenuto da fermo non va in retro: rilascia e premi di nuovo.</small>
               </div>
 
               <div class="slider-row">
@@ -586,7 +595,7 @@
                   <span>Potenza Massima Freno (EPA Freno)</span>
                   <strong id="val-brake-epa">95%</strong>
                 </div>
-                <input type="range" id="rng-brake-epa" min="25" max="125" step="5" />
+                <input type="range" id="rng-brake-epa" min="25" max="100" step="5" />
               </div>
 
               <div class="slider-row">

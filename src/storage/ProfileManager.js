@@ -5,12 +5,15 @@ const STORAGE_KEY = 'miniz_club_sim_state_v1';
 
 export const DEFAULT_CONTROLLER_PROFILE = {
   // Parametri stile radiocomando professionale (Kyosho / Futaba / FlySky Noble)
-  steeringExp: -35,       // -100 a +100 (negativo = più dolce al centro)
-  throttleExp: -15,       // -100 a +100
-  steeringDualRate: 90,   // 40% a 130% (angolo massimo ruote)
-  brakeStrength: 85,      // 20% a 130% (EPA freno)
-  servoSpeed: 90,         // 30% a 150% (velocità risposta sterzo)
-  deadzone: 6,            // 0% a 30% (zona morta levetta joypad)
+  // Dalla v1.6.2 i valori sono applicati esattamente come impostati (niente esponenziale o dual rate nascosti)
+  curveVersion: 2,
+  steeringExp: -20,       // -100 a +100 (negativo = più dolce al centro, 0 = lineare)
+  throttleExp: 0,         // -100 a +100 (0 = lineare come una radio di serie)
+  brakeExp: 0,            // -100 a +100
+  steeringDualRate: 100,  // 40% a 100% (100% = angolo massimo delle ruote)
+  brakeStrength: 100,     // 25% a 100% (EPA freno: forza alla massima corsa del grilletto)
+  servoSpeed: 100,        // 35% a 150% (velocità del servo, uguale in andata e al ritorno)
+  deadzone: 4,            // 0% a 28% (unica zona morta della levetta)
   steeringTrim: 0,        // -20 a +20 (centratura sterzo)
   throttleTrim: 0,        // -15 a +15
   invertSteering: false,
@@ -32,6 +35,25 @@ export const DEFAULT_CONTROLLER_PROFILE = {
     keyCamera: 'KeyC'
   }
 };
+
+// Fino alla v1.6.1 sterzo, gas e freno avevano esponenziale e dual rate nascosti sopra i valori del menu:
+// i vecchi valori darebbero una guida diversa, quindi le curve tornano ai nuovi default
+// (mappatura, trim e inversioni restano quelli dell'utente)
+function migrateControllerProfile(controller) {
+  if ((controller.curveVersion ?? 1) >= DEFAULT_CONTROLLER_PROFILE.curveVersion) return controller;
+  const d = DEFAULT_CONTROLLER_PROFILE;
+  return {
+    ...controller,
+    curveVersion: d.curveVersion,
+    steeringExp: d.steeringExp,
+    throttleExp: d.throttleExp,
+    brakeExp: d.brakeExp,
+    steeringDualRate: d.steeringDualRate,
+    brakeStrength: d.brakeStrength,
+    servoSpeed: d.servoSpeed,
+    deadzone: d.deadzone
+  };
+}
 
 export class ProfileManager {
   constructor() {
@@ -89,7 +111,6 @@ export class ProfileManager {
           },
           controller: {
             ...JSON.parse(JSON.stringify(DEFAULT_CONTROLLER_PROFILE)),
-            steeringDualRate: 115,
             servoSpeed: 120
           }
         }
@@ -110,7 +131,7 @@ export class ProfileManager {
       if (!raw) return this.getDefaultState();
       const parsed = JSON.parse(raw);
       const def = this.getDefaultState();
-      return {
+      const merged = {
         ...def,
         ...parsed,
         appVersion: APP_VERSION,
@@ -119,6 +140,10 @@ export class ProfileManager {
         autoProfiles: { ...def.autoProfiles, ...(parsed.autoProfiles || {}) },
         lapRecords: { ...def.lapRecords, ...(parsed.lapRecords || {}) }
       };
+      for (const profile of Object.values(merged.autoProfiles)) {
+        if (profile?.controller) profile.controller = migrateControllerProfile(profile.controller);
+      }
+      return merged;
     } catch (e) {
       return this.getDefaultState();
     }
