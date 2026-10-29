@@ -5,15 +5,17 @@ const STORAGE_KEY = 'miniz_club_sim_state_v1';
 
 export const DEFAULT_CONTROLLER_PROFILE = {
   // Parametri stile radiocomando professionale (Kyosho / Futaba / FlySky Noble)
-  // Dalla v1.6.2 i valori sono applicati esattamente come impostati (niente esponenziale o dual rate nascosti)
-  curveVersion: 2,
-  steeringExp: -20,       // -100 a +100 (negativo = più dolce al centro, 0 = lineare)
+  // Dalla v1.6.3 i valori sono applicati esattamente come impostati (niente esponenziale o dual rate nascosti).
+  // I default sono quelli del preset "Joypad": uno stick ha poca corsa e serve più risoluzione al centro.
+  curveVersion: 3,
+  steeringExp: -45,       // -100 a +100 (negativo = più dolce al centro, 0 = lineare)
+  steerSpeedLimit: 65,    // 0% a 100% (sterzo progressivo: curva più dolce al centro in velocità, 0 = come una radio)
   throttleExp: 0,         // -100 a +100 (0 = lineare come una radio di serie)
   brakeExp: 0,            // -100 a +100
   steeringDualRate: 100,  // 40% a 100% (100% = angolo massimo delle ruote)
   brakeStrength: 100,     // 25% a 100% (EPA freno: forza alla massima corsa del grilletto)
-  servoSpeed: 100,        // 35% a 150% (velocità del servo, uguale in andata e al ritorno)
-  deadzone: 4,            // 0% a 28% (unica zona morta della levetta)
+  servoSpeed: 85,         // 35% a 150% (velocità del servo, uguale in andata e al ritorno)
+  deadzone: 5,            // 0% a 28% (unica zona morta della levetta)
   steeringTrim: 0,        // -20 a +20 (centratura sterzo)
   throttleTrim: 0,        // -15 a +15
   invertSteering: false,
@@ -36,15 +38,27 @@ export const DEFAULT_CONTROLLER_PROFILE = {
   }
 };
 
-// Fino alla v1.6.1 sterzo, gas e freno avevano esponenziale e dual rate nascosti sopra i valori del menu:
-// i vecchi valori darebbero una guida diversa, quindi le curve tornano ai nuovi default
+// Preset dello sterzo: "Joypad" per uno stick con poca corsa, "Radiocomando" come una radio a pistola di serie
+export const CONTROLLER_PRESETS = {
+  joypad: { steeringExp: -45, steeringDualRate: 100, steerSpeedLimit: 65, servoSpeed: 85, deadzone: 5 },
+  radio: { steeringExp: -10, steeringDualRate: 100, steerSpeedLimit: 0, servoSpeed: 100, deadzone: 2 }
+};
+
+// Fino alla v1.6.1 sterzo, gas e freno avevano esponenziale e dual rate nascosti sopra i valori del menu,
+// e la v1.6.3 non aveva ancora il preset Joypad: i vecchi valori tornano ai nuovi default
 // (mappatura, trim e inversioni restano quelli dell'utente)
 function migrateControllerProfile(controller) {
-  if ((controller.curveVersion ?? 1) >= DEFAULT_CONTROLLER_PROFILE.curveVersion) return controller;
+  const version = controller.curveVersion ?? 1;
+  if (version >= DEFAULT_CONTROLLER_PROFILE.curveVersion) return controller;
   const d = DEFAULT_CONTROLLER_PROFILE;
+  if (version === 2) {
+    // Dalla v1.6.3: si aggiorna solo lo sterzo, gas e freno restano come li ha regolati l'utente
+    return { ...controller, curveVersion: d.curveVersion, ...CONTROLLER_PRESETS.joypad };
+  }
   return {
     ...controller,
     curveVersion: d.curveVersion,
+    steerSpeedLimit: d.steerSpeedLimit,
     steeringExp: d.steeringExp,
     throttleExp: d.throttleExp,
     brakeExp: d.brakeExp,

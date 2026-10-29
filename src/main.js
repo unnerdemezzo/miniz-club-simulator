@@ -11,7 +11,7 @@ import {
   DIFFERENTIALS
 } from './data/parts.js';
 import { TRACK_LAYOUTS } from './data/tracks.js';
-import { ProfileManager } from './storage/ProfileManager.js';
+import { ProfileManager, CONTROLLER_PRESETS } from './storage/ProfileManager.js';
 import { ControllerManager } from './input/ControllerManager.js';
 import { SoundAndCommentary } from './audio/SoundAndCommentary.js';
 import { ReplaySystem, REPLAY_CAMERAS } from './replay/ReplaySystem.js';
@@ -1001,6 +1001,7 @@ class MiniZSimulatorApp {
     const sliders = [
       { id: 'rng-steer-exp', valId: 'val-steer-exp', key: 'steeringExp', suffix: '%' },
       { id: 'rng-steer-dr', valId: 'val-steer-dr', key: 'steeringDualRate', suffix: '%' },
+      { id: 'rng-steer-speed', valId: 'val-steer-speed', key: 'steerSpeedLimit', suffix: '%' },
       { id: 'rng-servo-speed', valId: 'val-servo-speed', key: 'servoSpeed', suffix: '%' },
       { id: 'rng-thr-exp', valId: 'val-thr-exp', key: 'throttleExp', suffix: '%' },
       { id: 'rng-brake-exp', valId: 'val-brake-exp', key: 'brakeExp', suffix: '%' },
@@ -1017,6 +1018,13 @@ class MiniZSimulatorApp {
         const valEl = document.getElementById(s.valId);
         if (valEl) valEl.textContent = `${num > 0 && s.key.includes('Exp') ? '+' : ''}${num}${s.suffix}`;
         this.profileManager.updateActiveController({ [s.key]: num }, this.bodyNamesMap, this.trackNamesMap);
+      });
+    }
+
+    for (const [btnId, preset] of [['btn-preset-joypad', 'joypad'], ['btn-preset-radio', 'radio']]) {
+      document.getElementById(btnId)?.addEventListener('click', () => {
+        this.profileManager.updateActiveController({ ...CONTROLLER_PRESETS[preset] }, this.bodyNamesMap, this.trackNamesMap);
+        this.refreshMenuUI();
       });
     }
 
@@ -1278,6 +1286,7 @@ class MiniZSimulatorApp {
 
     setSlider('rng-steer-exp', 'val-steer-exp', ctrl.steeringExp, '%');
     setSlider('rng-steer-dr', 'val-steer-dr', ctrl.steeringDualRate, '%');
+    setSlider('rng-steer-speed', 'val-steer-speed', ctrl.steerSpeedLimit ?? 0, '%');
     setSlider('rng-servo-speed', 'val-servo-speed', ctrl.servoSpeed, '%');
     setSlider('rng-thr-exp', 'val-thr-exp', ctrl.throttleExp, '%');
     setSlider('rng-brake-exp', 'val-brake-exp', ctrl.brakeExp ?? 0, '%');

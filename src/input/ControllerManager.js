@@ -454,6 +454,9 @@ export class ControllerManager {
     return {
       steer: this.processedSteer,
       throttle: this.processedThrottle,
+      // Quanto la curva dello sterzo diventa più dolce con la velocità (0..1, applicato nella fisica che conosce
+      // la velocità). Lo stick a fondo resta sempre l'angolo massimo vero delle ruote.
+      steerSpeedLimit: Math.max(0, Math.min(100, ctrl.steerSpeedLimit ?? 0)) / 100,
       brake: this.processedBrake,
       rawSteer: this.rawSteer,
       rawThrottle: this.rawThrottle,
