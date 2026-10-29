@@ -82,6 +82,35 @@ export class MiniZCar {
     this.buildDetailedChassis3D();
     this.buildLights3D();
     this.buildHeadlightBeamsAndSkids();
+    this.buildContactShadow();
+  }
+
+  // Ombra di contatto morbida sotto il telaio: tiene l'auto "appoggiata" sul tappeto anche
+  // dove la shadow map della sala è troppo grossolana (o spenta in qualità Bassa)
+  buildContactShadow() {
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 256;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(64, 128, 6, 64, 128, 128);
+    gr.addColorStop(0, 'rgba(0,0,0,0.62)');
+    gr.addColorStop(0.45, 'rgba(0,0,0,0.38)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.save();
+    g.translate(64, 128);
+    g.scale(0.5, 1);
+    g.translate(-64, -128);
+    g.fillStyle = gr;
+    g.fillRect(-64, 0, 256, 256);
+    g.restore();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.8 });
+    this.contactShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.22), mat);
+    this.contactShadow.rotation.x = -Math.PI / 2;
+    this.contactShadow.position.y = 0.0006;
+    this.contactShadow.renderOrder = 1;
+    this.rootGroup.add(this.contactShadow);
   }
 
   // Nessun segno nero o cono finto sulla pista (tappeto RCP sempre pulito!)
@@ -481,6 +510,7 @@ export class MiniZCar {
     this.onWorkbench = Boolean(active);
     if (benchPose) this.workbenchPose = { ...this.workbenchPose, ...benchPose };
     if (this.beamGroup) this.beamGroup.visible = !this.onWorkbench;
+    if (this.contactShadow) this.contactShadow.visible = !this.onWorkbench;
     this.setNakedChassisMode(Boolean(this.currentSetup?.showNakedChassis));
     this.syncVisuals(0.016);
   }

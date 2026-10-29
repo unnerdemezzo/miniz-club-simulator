@@ -21,12 +21,12 @@ export function qualityPixelRatio(quality, width, height, displayDpr) {
   );
 }
 
-export function createQualityComposer(renderer, scene, camera, mainLight = null) {
+export function createQualityComposer(renderer, scene, camera, mainLight = null, extraShadowLights = []) {
   let currentProfileKey = 'alta';
 
   // NeutralToneMapping evita la sovrasaturazione innaturale di rossi, gialli e verdi
   renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.toneMappingExposure = 1.02;
+  renderer.toneMappingExposure = 1.1;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   function applySettings() {
@@ -42,6 +42,20 @@ export function createQualityComposer(renderer, scene, camera, mainLight = null)
 
     if (mainLight) {
       mainLight.castShadow = profile.shadows;
+      setShadowMapSize(mainLight, profile.shadowMapSize);
+    }
+    for (const light of extraShadowLights) {
+      light.castShadow = profile.shadows;
+    }
+  }
+
+  // La dimensione del profilo era dichiarata ma mai applicata: cambiarla richiede di buttare la mappa già allocata
+  function setShadowMapSize(light, size) {
+    if (!size || light.shadow.mapSize.x === size) return;
+    light.shadow.mapSize.set(size, size);
+    if (light.shadow.map) {
+      light.shadow.map.dispose();
+      light.shadow.map = null;
     }
   }
 

@@ -1,5 +1,7 @@
 // Parametri generali e dimensioni della sala del Mini-Z RC Club (in metri)
-export const VERSION = '1.2.1';
+import { APP_VERSION } from '../version.js';
+
+export const VERSION = APP_VERSION;
 
 // Colori delle 4 frequenze/canali dei piloti
 export const LANES = [
