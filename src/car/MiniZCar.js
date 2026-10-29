@@ -542,7 +542,9 @@ export class MiniZCar {
     this.state.pitch = 0;
     this.state.isFlipped = false;
     this.state.flipTimer = 0;
-    this.state.reverseLockTimer = 0;
+    this.state.escBrakeUsed = false;
+    this.state.escReverseArmed = false;
+    this.state.escNeutralTime = 0;
     this.syncVisuals(0.016);
   }
 
@@ -581,9 +583,9 @@ export class MiniZCar {
 
     const trackGrip = trackData?.gripMultiplier ?? 1.0;
 
-    // Angolo massimo delle ruote anteriori (~20 gradi reali con riduzione automatica ad alta velocità per evitare scatti nervosi sul rettilineo!)
-    const maxSteerRad = 0.34;
-    this.state.steerAngle = -input.steer * maxSteerRad;
+    // Angolo di sterzo della "bicicletta" equivalente (media delle due ruote anteriori): a fine corsa ~26°,
+    // stima per una Mini-Z vera (25–30°, da confermare con un goniometro). Le ruote visibili usano l'Ackermann.
+    this.state.steerAngle = -input.steer * MAX_STEER_RAD;
 
     // Direzione longitudinale e laterale dell'auto
     const fwdX = Math.sin(this.state.heading);
@@ -645,14 +647,27 @@ export class MiniZCar {
     const effectiveTopSpeed = topSpeed * batteryPowerFactor;
     const effectiveMaxAccel = maxAccel * batteryPowerFactor * this.state.tireGripFactor;
 
+    // ESC Kyosho: freno → neutro → freno di nuovo = retromarcia. Il freno tenuto da fermo resta freno;
+    // la retro si arma solo dopo un passaggio dal neutro (grilletto rilasciato) e si disarma col gas.
     if (thr > 0.008) {
-      this.state.reverseLockTimer = 0.24;
+      this.state.escBrakeUsed = false;
+      this.state.escReverseArmed = false;
+      this.state.escNeutralTime = 0;
+    } else if (brk > 0.008) {
+      this.state.escNeutralTime = 0;
+      if (!this.state.escReverseArmed) this.state.escBrakeUsed = true;
+    } else {
+      this.state.escNeutralTime = (this.state.escNeutralTime || 0) + dt;
+      if (this.state.escBrakeUsed && this.state.escNeutralTime > 0.05) this.state.escReverseArmed = true;
+    }
+
+    if (thr > 0.008) {
       // Velocità target strettamente proporzionale alla pressione del grilletto (20% grilletto = 20% velocità, 50% = 50% velocità)
       const targetSpeed = thr * effectiveTopSpeed;
       const speedDiff = targetSpeed - vForward;
       if (speedDiff > 0) {
-        // Erogazione progressiva di coppia del regolatore elettronico ICS: dolce alle basse aperture, piena quando affondi
-        const torqueEnvelope = Math.pow(thr, 1.15) * clamp(speedDiff / (effectiveTopSpeed * 0.42), 0.18, 1.0);
+        // Coppia proporzionale al grilletto (la progressività la decide solo l'esponenziale gas del menu)
+        const torqueEnvelope = thr * clamp(speedDiff / (effectiveTopSpeed * 0.42), 0.18, 1.0);
         driveAccel = torqueEnvelope * effectiveMaxAccel;
       } else {
         // Rilascio parziale del gas: freno motore fluido e naturale fino a raggiungere la velocità impostata dal grilletto
@@ -660,32 +675,26 @@ export class MiniZCar {
       }
     } else if (brk > 0.008) {
       if (vForward > 0.06) {
-        // Frenata proporzionale e progressiva (10% freno = rallentamento leggero d'inserimento, 100% = staccata decisa senza inchiodare di colpo)
-        this.state.reverseLockTimer = 0.26;
-        const progressiveBrake = Math.pow(brk, 1.45);
-        const maxBrakeDecel = 6.2 * (0.65 + 0.35 * rearGrip) * this.state.tireGripFactor;
-        driveAccel = -progressiveBrake * maxBrakeDecel;
+        // Frenata lineare col grilletto (la forma la decide l'esponenziale freno del menu): freno solo dietro,
+        // a fondo circa 0,5 g come una RWD sul tappeto RCP
+        const maxBrakeDecel = 5.0 * (0.65 + 0.35 * rearGrip) * this.state.tireGripFactor;
+        driveAccel = -brk * maxBrakeDecel;
         if (vForward + driveAccel * dt < 0) {
           driveAccel = -vForward / dt;
         }
+      } else if (!this.state.escReverseArmed) {
+        // Fermo col freno tenuto: l'ESC tiene il freno, niente retro finché non si torna al neutro
+        vForward = 0;
+        driveAccel = 0;
       } else {
-        if ((this.state.reverseLockTimer || 0) > 0) {
-          this.state.reverseLockTimer -= dt;
-          vForward = 0;
-          driveAccel = 0;
+        const revTop = effectiveTopSpeed * 0.32 * brk;
+        if (vForward > -revTop) {
+          driveAccel = -brk * 3.4;
         } else {
-          const revTop = effectiveTopSpeed * 0.32 * brk;
-          if (vForward > -revTop) {
-            driveAccel = -Math.pow(brk, 1.35) * 3.4;
-          } else {
-            driveAccel = (-revTop - vForward) * 3.5;
-          }
+          driveAccel = (-revTop - vForward) * 3.5;
         }
       }
     } else {
-      if ((this.state.reverseLockTimer || 0) > 0) {
-        this.state.reverseLockTimer = Math.max(0, this.state.reverseLockTimer - dt);
-      }
       if (Math.abs(vForward) > 0.005) {
         driveAccel = -Math.sign(vForward) * Math.min(Math.abs(vForward) / dt, drag);
       } else {
@@ -695,23 +704,29 @@ export class MiniZCar {
 
     vForward += driveAccel * dt;
 
-    // 3. GEOMETRIA DI STERZO A BASSO PASSO (98mm) CON RIDUZIONE SENSIBILITÀ AD ALTA VELOCITÀ E RITORNO CASTER IMMEDIATO:
-    const isStickCentered = Math.abs(input.steer) < 0.025;
+    // 3. STERZO GEOMETRICO (modello a bicicletta, passo 98 mm):
+    // a bassa velocità l'auto gira sul raggio dato dall'angolo delle ruote (R = passo / tan δ, ~20 cm a fine corsa);
+    // salendo di velocità le gomme scivolano un po' (gradiente di sottosterzo) e la velocità d'imbardata
+    // è limitata dall'aderenza dell'anteriore (sottosterzo progressivo invece di uno sterzo "attenuato" a tavolino)
+    const steerAmount = Math.abs(input.steer);
+    // Transizione continua tra "sterzo al centro" e "sterzo inserito" (niente soglie che fanno scattare lo smorzamento)
+    const centerBlend = 1 - smoothstep(0, 0.08, steerAmount);
     const effectiveFrontGrip = frontGrip * this.state.tireGripFactor;
     const effectiveRearGrip = rearGrip * this.state.tireGripFactor;
 
-    // Più l'auto va veloce sul rettilineo, più lo sterzo diventa morbido e progressivo (come l'effetto giroscopico/caster reale Mini-Z!)
-    const speedRatio = Math.abs(vForward) / Math.max(3.5, effectiveTopSpeed);
-    const speedSensitivityAtten = 1.0 / (1.0 + speedRatio * speedRatio * (1.85 / effectiveFrontGrip));
-    const lowSpeedEngage = Math.min(1.0, Math.abs(vForward) / 0.38);
-    // Guadagno d'imbardata realistico (raggio minimo di sterzata ~34 cm a bassa velocità, inserimento rotondo e sincero in curva)
-    const turnResponsiveness = 6.2 * effectiveFrontGrip * tPlate.responsiveness * diff.rotationEase * speedSensitivityAtten;
+    const absV = Math.abs(vForward);
     const directionSign = vForward >= -0.05 ? 1 : -1;
-    const targetYawRate = isStickCentered ? 0 : this.state.steerAngle * turnResponsiveness * lowSpeedEngage * directionSign;
+    const tanSteer = Math.tan(this.state.steerAngle);
+    const charSpeed = UNDERSTEER_CHAR_SPEED * Math.sqrt(Math.max(0.3, effectiveFrontGrip));
+    const kinematicYaw = (absV * tanSteer) / (REAL_SCALE.WHEELBASE * (1 + (absV * absV) / (charSpeed * charSpeed)));
+    const frontLateralLimit = FRONT_LATERAL_ACCEL * effectiveFrontGrip;
+    // T-plate e differenziale cambiano quanto l'auto ruota al limite, non la geometria a bassa velocità
+    const gripYawLimit = (frontLateralLimit * tPlate.responsiveness * diff.rotationEase) / Math.max(0.25, absV);
+    const targetYawRate = gripYawLimit * Math.tanh(kinematicYaw / gripYawLimit) * directionSign;
 
-    const yawDampingRate = isStickCentered ? 45.0 : 18.0;
+    const yawDampingRate = 18.0 + 27.0 * centerBlend;
     this.state.angularVel += (targetYawRate - this.state.angularVel) * Math.min(1, dt * yawDampingRate);
-    if (isStickCentered && Math.abs(this.state.angularVel) < 0.03) {
+    if (steerAmount < 0.001 && Math.abs(this.state.angularVel) < 0.03) {
       this.state.angularVel = 0;
     }
     this.state.heading += this.state.angularVel * dt;
@@ -725,16 +740,16 @@ export class MiniZCar {
     }
 
     // Sovrasterzo controllabile solo con assetto Drift o spalancando il gas a ruote sterzate
-    if (!isStickCentered && (isDriftSetup || (chassis.driveType === 'RWD' && thr > 0.85 && effectiveRearGrip < 1.02))) {
+    if (steerAmount > 0.02 && (isDriftSetup || (chassis.driveType === 'RWD' && thr > 0.85 && effectiveRearGrip < 1.02))) {
       const powerSlide = thr * Math.sin(this.state.steerAngle) * (isDriftSetup ? 2.6 : 0.75);
       vLateral -= powerSlide * dt;
     }
 
     // Riallineamento laterale immediato e composto quando raddrizzi lo stick
     const baseLatDamp = isDriftSetup ? 4.5 : 18.5 * effectiveRearGrip * chassis.stabilityFactor;
-    const lateralDamping = isStickCentered ? baseLatDamp * 2.1 : baseLatDamp;
+    const lateralDamping = baseLatDamp * (1 + 1.1 * centerBlend);
     vLateral -= vLateral * Math.min(1, lateralDamping * dt);
-    if (isStickCentered && Math.abs(vLateral) < 0.015) {
+    if (steerAmount < 0.001 && Math.abs(vLateral) < 0.015) {
       vLateral = 0;
     }
 
@@ -849,11 +864,15 @@ export class MiniZCar {
       this.rearBrakeGlow.visible = Boolean(this.state.braking && !this.onWorkbench);
     }
 
+    // Ackermann semplificato: la ruota interna alla curva sterza più di quella esterna, così le due ruote
+    // puntano allo stesso centro di curva (lf sta sul lato +X, rf sul lato -X)
+    const steerShown = this.onWorkbench ? 0 : this.state.steerAngle;
+    const { left: steerLeft, right: steerRight } = ackermannAngles(steerShown);
+
     // Ruote del telaio MR-04 (il fusello sterza, il gruppo interno "spin" rotola)
     if (this.chassisWheelMeshes.lf) {
-      const steerShown = this.onWorkbench ? 0 : this.state.steerAngle;
-      this.chassisWheelMeshes.lf.rotation.y = steerShown;
-      this.chassisWheelMeshes.rf.rotation.y = steerShown;
+      this.chassisWheelMeshes.lf.rotation.y = steerLeft;
+      this.chassisWheelMeshes.rf.rotation.y = steerRight;
       for (const key of ['lf', 'rf', 'lr', 'rr']) {
         const spin = this.chassisWheelMeshes[key].userData.spin;
         if (spin) spin.rotation.x = this.state.wheelSpin;
@@ -862,11 +881,11 @@ export class MiniZCar {
 
     // Ruote del modello 3D GLB (es. Ferrari 499P) imperniate sul proprio mozzo
     for (const w of this.glbWheelNodes.lf) {
-      w.steerPivot.rotation.y = this.state.steerAngle;
+      w.steerPivot.rotation.y = steerLeft;
       w.spinPivot.rotation.x = this.state.wheelSpin;
     }
     for (const w of this.glbWheelNodes.rf) {
-      w.steerPivot.rotation.y = this.state.steerAngle;
+      w.steerPivot.rotation.y = steerRight;
       w.spinPivot.rotation.x = this.state.wheelSpin;
     }
     for (const w of this.glbWheelNodes.lr) {
@@ -895,6 +914,34 @@ export class MiniZCar {
   }
 }
 
+// Angolo massimo delle ruote anteriori (media delle due ruote) a fine corsa con dual rate 100%
+const MAX_STEER_RAD = (26 * Math.PI) / 180;
+// Velocità caratteristica del sottosterzo con gomme di riferimento (m/s): sotto questa l'auto segue la geometria,
+// sopra le gomme scivolano e il raggio di curva si allarga
+const UNDERSTEER_CHAR_SPEED = 2.8;
+// Accelerazione laterale massima dell'anteriore con gomme di riferimento sul tappeto RCP (m/s², circa 0,9 g: con le gomme di serie si arriva a circa 1,2 g)
+const FRONT_LATERAL_ACCEL = 9.0;
+// Carreggiata anteriore (distanza tra i centri delle ruote)
+const FRONT_TRACK = 0.066;
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
+}
+
+function smoothstep(edge0, edge1, x) {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+// Angoli delle due ruote anteriori con Ackermann dal raggio di curva della ruota "media"
+function ackermannAngles(steerAngle) {
+  if (Math.abs(steerAngle) < 1e-4) return { left: steerAngle, right: steerAngle };
+  const radius = REAL_SCALE.WHEELBASE / Math.tan(Math.abs(steerAngle));
+  const inner = Math.atan(REAL_SCALE.WHEELBASE / (radius - FRONT_TRACK / 2));
+  const outer = Math.atan(REAL_SCALE.WHEELBASE / (radius + FRONT_TRACK / 2));
+  const sign = Math.sign(steerAngle);
+  // steerAngle > 0 gira verso +X: la ruota interna è la sinistra (lf, lato +X)
+  return sign > 0
+    ? { left: inner * sign, right: outer * sign }
+    : { left: outer * sign, right: inner * sign };
 }

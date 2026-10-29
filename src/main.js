@@ -1015,6 +1015,7 @@ class MiniZSimulatorApp {
       { id: 'rng-steer-dr', valId: 'val-steer-dr', key: 'steeringDualRate', suffix: '%' },
       { id: 'rng-servo-speed', valId: 'val-servo-speed', key: 'servoSpeed', suffix: '%' },
       { id: 'rng-thr-exp', valId: 'val-thr-exp', key: 'throttleExp', suffix: '%' },
+      { id: 'rng-brake-exp', valId: 'val-brake-exp', key: 'brakeExp', suffix: '%' },
       { id: 'rng-brake-epa', valId: 'val-brake-epa', key: 'brakeStrength', suffix: '%' },
       { id: 'rng-deadzone', valId: 'val-deadzone', key: 'deadzone', suffix: '%' },
       { id: 'rng-steer-trim', valId: 'val-steer-trim', key: 'steeringTrim', suffix: '' }
@@ -1291,6 +1292,7 @@ class MiniZSimulatorApp {
     setSlider('rng-steer-dr', 'val-steer-dr', ctrl.steeringDualRate, '%');
     setSlider('rng-servo-speed', 'val-servo-speed', ctrl.servoSpeed, '%');
     setSlider('rng-thr-exp', 'val-thr-exp', ctrl.throttleExp, '%');
+    setSlider('rng-brake-exp', 'val-brake-exp', ctrl.brakeExp ?? 0, '%');
     setSlider('rng-brake-epa', 'val-brake-epa', ctrl.brakeStrength, '%');
     setSlider('rng-deadzone', 'val-deadzone', ctrl.deadzone, '%');
     setSlider('rng-steer-trim', 'val-steer-trim', ctrl.steeringTrim, '');
