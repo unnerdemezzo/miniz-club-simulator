@@ -360,6 +360,7 @@ class MiniZSimulatorApp {
 
     document.getElementById('btn-open-menu')?.addEventListener('click', () => openMenu());
     document.getElementById('btn-open-workbench-quick')?.addEventListener('click', () => openMenu('tab-workbench'));
+    document.getElementById('btn-setup-display')?.addEventListener('click', () => openMenu('tab-system'));
     document.getElementById('btn-close-menu')?.addEventListener('click', closeMenu);
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') {
@@ -498,6 +499,8 @@ class MiniZSimulatorApp {
 
     // Scheda 5: Audio & Backup Configurazione (.json)
     this.initSystemAndBackupTab();
+    this.initDisplaySettingsUI();
+    this.initVoiceSettingsUI();
 
     this.refreshMenuUI();
   }
@@ -786,8 +789,9 @@ class MiniZSimulatorApp {
         this.raceStartTime = performance.now();
         this.club.aiPaused = false;
         // Chi è in griglia dietro la linea non ha ancora "completato" il giro quando la attraversa
+        // In griglia sono tutti dietro la linea: il primo passaggio sotto il ponte non è un giro completato
         this.club.aiCars.forEach((ai) => {
-          ai.raceStartLaps = ai.laps + (ai.t > 0.5 ? 1 : 0);
+          ai.raceStartLaps = ai.laps + 1;
         });
       }, t0 + steps.length * 1000)
     );
@@ -1172,6 +1176,7 @@ class MiniZSimulatorApp {
 
   refreshMenuUI() {
     const state = this.profileManager.state;
+    this.refreshDisplaySettingsUI?.();
     const activeProf = this.profileManager.getActiveProfile(this.bodyNamesMap, this.trackNamesMap);
     const setup = activeProf.carSetup;
     const ctrl = activeProf.controller;
@@ -1367,13 +1372,160 @@ class MiniZSimulatorApp {
       return;
     }
 
-    // VISUALE PALCO PILOTI (identica a Slot-Car: occhi a y = ROST.top + 1.64 = +1.24m sopra il tavolo, z = ROST.z0 + 0.36 = 1.91m, fov = 50°)
+    // VISUALE PALCO PILOTI (occhi a y = ROST.top + 1.64 = +1.24m sopra il tavolo, z = ROST.z0 + 0.36 = 1.91m).
+    // Il campo visivo viene dallo schermo di chi gioca (misura, formato, distanza) oppure è il classico 50°
     this.camera.position.set(2.45, ROST.top + 1.64, ROST.z0 + 0.36);
-    this.camera.fov = 50;
+    this.camera.fov = this.getStandFov();
     this.camera.updateProjectionMatrix();
 
-    const look = new THREE.Vector3(2.45, 0, -1.8).lerp(carPos, 0.35);
+    // Con un campo visivo stretto (schermo piccolo o lontano) il pilota gira di più la testa verso l'auto
+    const follow = clamp(0.35 + ((50 - this.camera.fov) / 25) * 0.45, 0.35, 0.85);
+    const look = new THREE.Vector3(2.45, 0, -1.8).lerp(carPos, follow);
     keepDriverCarVisible(this.camera, look, carPos);
+  }
+
+  // Campo visivo verticale (gradi) della vista dal palco.
+  // Prospettiva reale: l'angolo è quello sotteso dalla finestra del gioco vista dagli occhi del pilota,
+  // vFOV = 2·atan(altezza visibile / 2 / distanza). Altezza schermo = diagonale / √(1 + formato²).
+  getStandFov() {
+    const d = this.profileManager.state.display || {};
+    const zoom = clamp(Number(d.zoom) || 1, 0.5, 2);
+    let base = 50;
+    if (d.realPerspective !== false) {
+      const sw = window.screen?.width || window.innerWidth;
+      const sh = window.screen?.height || window.innerHeight;
+      let ratio = sw / sh;
+      if (d.aspect && d.aspect !== 'auto') {
+        const [w, h] = d.aspect.split(':').map(Number);
+        if (w > 0 && h > 0) ratio = w / h;
+      }
+      const diagCm = (Number(d.diagonalInch) || 27) * 2.54;
+      const screenHcm = diagCm / Math.sqrt(1 + ratio * ratio);
+      // Se la finestra non è a schermo intero il gioco occupa solo una parte dell'altezza dello schermo
+      const windowShare = clamp(window.innerHeight / sh, 0.25, 1);
+      const distCm = clamp(Number(d.distanceCm) || 65, 20, 400);
+      base = (2 * Math.atan((screenHcm * windowShare) / 2 / distCm) * 180) / Math.PI;
+    }
+    const fov = (2 * Math.atan(Math.tan((base * Math.PI) / 360) * zoom) * 180) / Math.PI;
+    return clamp(fov, 10, 100);
+  }
+
+  initDisplaySettingsUI() {
+    let d = this.profileManager.state.display;
+    const chk = document.getElementById('chk-real-perspective');
+    const diag = document.getElementById('sel-screen-diagonal');
+    const aspect = document.getElementById('sel-screen-aspect');
+    const dist = document.getElementById('rng-screen-distance');
+    const zoom = document.getElementById('rng-fov-zoom');
+
+    const refresh = () => {
+      // Dopo il ripristino di un backup lo stato è un oggetto nuovo
+      d = this.profileManager.state.display;
+      if (chk) chk.checked = d.realPerspective !== false;
+      if (diag) {
+        // Una misura salvata che non è in elenco viene aggiunta come voce
+        const v = String(d.diagonalInch);
+        if (![...diag.options].some((o) => o.value === v)) diag.add(new Option(`${v}"`, v));
+        diag.value = v;
+      }
+      if (aspect) aspect.value = d.aspect || 'auto';
+      if (dist) dist.value = d.distanceCm;
+      if (zoom) zoom.value = Math.round((d.zoom || 1) * 100);
+      const distLbl = document.getElementById('val-screen-distance');
+      if (distLbl) distLbl.textContent = `${d.distanceCm} cm`;
+      const zoomLbl = document.getElementById('val-fov-zoom');
+      if (zoomLbl) zoomLbl.textContent = `${Math.round((d.zoom || 1) * 100)}%`;
+      for (const el of [diag, aspect, dist]) if (el) el.disabled = d.realPerspective === false;
+      const out = document.getElementById('display-fov-readout');
+      if (out) {
+        const sw = window.screen?.width || 0;
+        const sh = window.screen?.height || 0;
+        const detected = sw && sh ? ` • schermo rilevato ${sw}×${sh}` : '';
+        out.textContent =
+          d.realPerspective === false
+            ? `Campo visivo classico: ${this.getStandFov().toFixed(0)}°`
+            : `Campo visivo verticale dal palco: ${this.getStandFov().toFixed(1)}°${detected}`;
+      }
+    };
+    const save = () => {
+      this.profileManager.save();
+      refresh();
+    };
+
+    chk?.addEventListener('change', (e) => {
+      d.realPerspective = e.target.checked;
+      save();
+    });
+    diag?.addEventListener('change', (e) => {
+      d.diagonalInch = Number(e.target.value);
+      save();
+    });
+    aspect?.addEventListener('change', (e) => {
+      d.aspect = e.target.value;
+      save();
+    });
+    dist?.addEventListener('input', (e) => {
+      d.distanceCm = Number(e.target.value);
+      save();
+    });
+    zoom?.addEventListener('input', (e) => {
+      d.zoom = Number(e.target.value) / 100;
+      save();
+    });
+    window.addEventListener('resize', refresh);
+    this.refreshDisplaySettingsUI = refresh;
+    refresh();
+  }
+
+  initVoiceSettingsUI() {
+    const sel = document.getElementById('sel-commentary-voice');
+    const hint = document.getElementById('voice-hint');
+    const audio = this.profileManager.state.audio;
+
+    const fill = (voices, active) => {
+      if (!sel) return;
+      sel.innerHTML = '';
+      sel.add(new Option('Automatica (migliore voce italiana)', ''));
+      for (const v of voices) {
+        const tag = /natural|neural|online|premium|enhanced|migliorat/i.test(v.name) ? ' ★ naturale' : '';
+        sel.add(new Option(`${v.name} (${v.lang})${tag}`, v.name));
+      }
+      sel.value = audio.voiceName && voices.some((v) => v.name === audio.voiceName) ? audio.voiceName : '';
+      if (hint) {
+        hint.textContent = !('speechSynthesis' in window)
+          ? 'Questo browser non ha la sintesi vocale: restano i sottotitoli.'
+          : voices.length === 0
+            ? 'Nessuna voce italiana installata: aggiungila dalle impostazioni di sistema (Lingua → Italiano → Voce) oppure usa Edge o Chrome.'
+            : `In uso: ${active?.name || 'voce di sistema'}. Le voci "Natural"/"Online" (Edge) e "Google italiano" (Chrome) sono le più realistiche.`;
+      }
+    };
+    this.sound.onVoicesChanged = fill;
+    fill(this.sound.availableVoices, this.sound.italianVoice);
+
+    sel?.addEventListener('change', (e) => {
+      this.sound.setVoiceByName(e.target.value);
+      this.sound.speak('Ecco la nuova voce della direzione gara.', 'force');
+    });
+
+    const bindSlider = (id, valId, key) => {
+      const el = document.getElementById(id);
+      const lbl = document.getElementById(valId);
+      const pct = Math.round((audio[key] ?? 1) * 100);
+      if (el) el.value = pct;
+      if (lbl) lbl.textContent = `${pct}%`;
+      el?.addEventListener('input', (e) => {
+        const v = Number(e.target.value);
+        if (lbl) lbl.textContent = `${v}%`;
+        audio[key] = v / 100;
+        this.profileManager.save();
+      });
+    };
+    bindSlider('rng-voice-rate', 'val-voice-rate', 'voiceRate');
+    bindSlider('rng-voice-pitch', 'val-voice-pitch', 'voicePitch');
+
+    document.getElementById('btn-test-voice')?.addEventListener('click', () => {
+      this.sound.speak('Giro tre, sei e quarantadue. Nuovo miglior tempo della Ferrari sotto il palco!', 'force');
+    });
   }
 
   // L'ombra nitida segue l'auto: il frustum resta centrato sotto la Mini-Z ovunque sia (pista, replay)
@@ -1483,7 +1635,7 @@ class MiniZSimulatorApp {
           this.trackData,
           (hitSpeed) => {
             if (hitSpeed > 0.7) {
-              this.sound.playBarrierHit(hitSpeed * 0.35);
+              this.sound.playBarrierHit(hitSpeed * 0.35, this.car.rootGroup.position);
               if (hitSpeed > 1.85) this.sound.commentWallHit(true);
             }
           },
@@ -1562,7 +1714,7 @@ class MiniZSimulatorApp {
     const pinion = PINIONS.find((p) => p.id === activeSetup.pinionId);
     const speedRatio = Math.abs(this.car.state.speed) / (motorSpec.maxSpeedMs * (pinion?.speedMult || 1));
     if (!this.replay.isActive) this.sound.setMotorActive(this.racePhase !== 'finished' || Math.abs(this.car.state.speed) > 0.05);
-    this.sound.updateMotorSound(speedRatio, input.throttle, this.car.state.slipAmount, motorSpec);
+    this.sound.updateMotorSound(speedRatio, input.throttle, this.car.state.slipAmount, motorSpec, this.car.rootGroup.position);
 
     const realKmh = Math.abs(this.car.state.speed) * 3.6;
     const scaleKmh = Math.round(realKmh * 27);
@@ -1590,7 +1742,10 @@ class MiniZSimulatorApp {
     // 6. Registra frame per il Replay Multicamera
     if (this.racePhase === 'racing') this.replay.recordFrame(this.car.state, this.currentLapSec);
 
-    // 7. Aggiorna Visuale dal Palco e Personaggi animati nella sala
+    // 7. Aggiorna Visuale dal Palco e Personaggi animati nella sala (e gli avversari, che vedono l'auto del giocatore)
+    const playerOnTrack = this.car.rootGroup.visible && !this.car.onWorkbench;
+    const st = this.car.state;
+    this.club.playerBody = { active: playerOnTrack, x: st.x, z: st.z, vx: st.vx, vz: st.vz };
     this.updateDriverCamera(dt);
     this.club.animateCharacters(
       now * 0.001,
@@ -1600,6 +1755,18 @@ class MiniZSimulatorApp {
       this.camera.position,
       input.throttle
     );
+
+    // 8. Contatti veri tra le auto: si spingono, rimbalzano e si sentono (nessuna auto "fantasma")
+    const contacts = this.club.resolveCarContacts({ active: playerOnTrack, state: st });
+    if (contacts.length) {
+      if (playerOnTrack) this.car.syncVisuals();
+      for (const c of contacts) {
+        if (c.speed < 0.08) continue;
+        this.sound.playCarContact(c.speed / 2.2, { x: c.x, y: st.y + 0.03, z: c.z }, `${c.a}-${c.b}`);
+      }
+    }
+    this.sound.updateOpponentEngines(this.club.getOpponentEngineStates());
+    this.sound.updateListener(this.camera);
 
     this.updateCarShadowLight();
     this.qualityComposer.render();

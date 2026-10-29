@@ -19,6 +19,14 @@ import { buildRoomMarshals } from '../club/room-marshals.js';
 import { buildRoomGuests } from '../club/room-guests.js';
 import { ROOM_LINK } from '../club/club-tracks.js';
 import { makeCar } from '../club/car.js';
+import { resolveCarContacts, yawFromImpulse } from '../car/CarContacts.js';
+
+// Ingombro in pianta per i contatti: Mini-Z 17,2 cm x 8 cm (avversari scalati 1,16 nel modello 3D)
+const CAR_HALF_SEG = 0.05;
+const CAR_RADIUS = 0.04;
+// Griglia di partenza: file sfalsate a due a due, 30 cm tra una posizione e la successiva
+const GRID_ROW_GAP = 0.3;
+const GRID_LATERAL = 0.15;
 
 const R = rng(21);
 
@@ -56,6 +64,9 @@ export class ClubEnvironment {
     this.stationDisplays = null;
     this.aiCars = [];
     this.aiPaused = false;
+    this.gridStartT = null;
+    this.lapLineT = null;
+    this.playerBody = null;
 
     this.bridgeScreenCanvas = null;
     this.bridgeScreenCtx = null;
@@ -786,22 +797,24 @@ export class ClubEnvironment {
     // 3b. Allestimento scenografico interno in scala 1:27 sul tappeto verde (cartelloni sponsor, box telemetria e gomme di protezione)
     this.buildInfieldScenery(this.curveSamples, laneHalf);
 
-    // 4. Crea / reimposta le 3 Auto Avversarie AI Mini-Z sul tracciato
-    this.spawnAiCars();
-
-    // 5. Posizione di partenza dell'auto sul rettilineo principale prima del ponte (100% dritta al centro corsia!)
+    // 4. Posizione di partenza: la pole è sul rettilineo principale prima del ponte (dritta, in corsia)
     const startIdx = (bridgeIdx - 28 + numSamples) % numSamples;
     const startSample = this.curveSamples[startIdx];
-    const startHeading = Math.atan2(startSample.tan.x, startSample.tan.z);
+    this.gridStartT = this.nearestCurveT(startSample.pt);
+    this.lapLineT = this.nearestCurveT(bridgeSample.pt);
+    const playerSlot = this.gridSlot(0);
+
+    // 5. Crea / reimposta le 3 Auto Avversarie AI Mini-Z sulla griglia, dietro al giocatore
+    this.spawnAiCars();
 
     this.lastBridgeSide = null;
     this.lapArmed = false;
 
     return {
       spec,
-      startX: startSample.pt.x,
-      startZ: startSample.pt.z,
-      startHeading,
+      startX: playerSlot.x,
+      startZ: playerSlot.z,
+      startHeading: playerSlot.heading,
       gripMultiplier: spec.gripMultiplier,
       waypoints: spec.waypoints,
       tvCameras: spec.tvCameras,
@@ -813,6 +826,38 @@ export class ClubEnvironment {
   setAiDifficulty(level) {
     this.aiLevel = ['none', 'beginner', 'club', 'expert', 'pro'].includes(level) ? level : 'club';
     this.aiCarsGroup.visible = this.aiLevel !== 'none';
+  }
+
+  // Parametro t (0..1, a passo costante in metri) del punto della curva più vicino a p
+  nearestCurveT(p) {
+    const n = 1200;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < n; i++) {
+      const q = this.curve.getPointAt(i / n);
+      const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = i / n;
+      }
+    }
+    return best;
+  }
+
+  // Posizione k in griglia (0 = pole): file sfalsate, la pole a sinistra, la seconda a destra 30 cm dietro...
+  gridSlot(k) {
+    const trackLen = Math.max(12, this.totalTrackLength);
+    const t = (((this.gridStartT ?? 0) - (k * GRID_ROW_GAP) / trackLen) % 1 + 1) % 1;
+    const lane = k % 2 === 0 ? -GRID_LATERAL : GRID_LATERAL;
+    const pt = this.curve.getPointAt(t);
+    const tan = this.curve.getTangentAt(t).normalize();
+    return {
+      t,
+      lane,
+      x: pt.x - tan.z * lane,
+      z: pt.z + tan.x * lane,
+      heading: Math.atan2(tan.x, tan.z)
+    };
   }
 
   spawnAiCars() {
@@ -829,15 +874,24 @@ export class ClubEnvironment {
       this.aiCarsGroup.add(carObj.root);
 
       const baseOffset = (i - 2) * 0.16;
+      // Il giocatore è in pole (posizione 0), gli avversari nelle posizioni 1, 2 e 3 dietro di lui
+      const slot = this.curve ? this.gridSlot(i) : { t: (0.04 - i * 0.025 + 1) % 1, lane: baseOffset };
       this.aiCars.push({
+        id: `ai${i}`,
         driver: drv,
         carObj,
-        t: (0.04 - i * 0.025 + 1) % 1,
+        t: slot.t,
         baseLaneOffset: baseOffset,
-        laneOffset: baseOffset,
-        targetLaneOffset: baseOffset,
-        speed: 2.8 * (drv.pace || 1.0),
-        laps: 1,
+        laneOffset: slot.lane,
+        targetLaneOffset: slot.lane,
+        latVel: 0,
+        throttleEst: 0,
+        x: 0,
+        z: 0,
+        fx: 1,
+        fz: 0,
+        speed: 0,
+        laps: 0,
         lapTime: 0,
         lastLap: null,
         bestLap: null,
@@ -848,6 +902,8 @@ export class ClubEnvironment {
         rollAngle: 0
       });
     }
+
+    if (this.curve) this.aiCars.forEach((ai) => this.placeAiCar(ai));
 
     // Sostituisce le auto AI procedurali con veri modelli 3D Hypercar in scala 1:27 con livree WEC desaturate e realistiche
     const applyGlbToAiCars = (gltfScene) => {
@@ -1685,17 +1741,48 @@ export class ClubEnvironment {
           targetSpeed *= 0.70;
         }
 
+        // Traffico: un'auto davanti nella stessa traiettoria (giocatore o altro avversario) va superata
+        // spostandosi di lato, oppure seguita alzando il gas, non tamponata alla cieca
+        const fwdX = tanNow.x, fwdZ = tanNow.z;
+        const fLen = Math.hypot(fwdX, fwdZ) || 1;
+        const ux = fwdX / fLen, uz = fwdZ / fLen;
+        const others = this.aiCars.filter((o) => o !== ai).map((o) => ({ x: o.x, z: o.z, vx: o.fx * o.speed, vz: o.fz * o.speed }));
+        if (this.playerBody?.active) others.push(this.playerBody);
+        for (const o of others) {
+          const dx = o.x - ai.x;
+          const dz = o.z - ai.z;
+          const along = dx * ux + dz * uz;
+          const lat = dx * -uz + dz * ux;
+          if (along < 0.04 || along > 0.5 || Math.abs(lat) > 0.13) continue;
+          const oSpeed = o.vx * ux + o.vz * uz;
+          targetSpeed = Math.min(targetSpeed, Math.max(0, oSpeed + (along - 0.24) * 4));
+          if (ai.errorState === 'none') {
+            const oLane = ai.laneOffset + lat;
+            let side = lat >= 0 ? -1 : 1;
+            if (Math.abs(oLane + side * 0.17) > maxSafeOffset) side = -side;
+            ai.targetLaneOffset = clamp(oLane + side * 0.17, -maxSafeOffset, maxSafeOffset);
+          }
+        }
+
         // Rispetta i veri limiti fisici di accelerazione e frenata (mai variazioni istantanee!)
+        const speedBefore = ai.speed;
         if (targetSpeed > ai.speed) {
           ai.speed = Math.min(targetSpeed, ai.speed + levelParams.accel * dt);
         } else {
           ai.speed = Math.max(targetSpeed, ai.speed - levelParams.brake * dt);
         }
 
+        // Gas stimato dall'accelerazione: serve al suono del motore dell'avversario
+        const thrTarget = dt > 0 ? (ai.speed > speedBefore + 0.001 ? 1 : ai.speed < speedBefore - 0.001 ? 0.05 : 0.45) : 0;
+        ai.throttleEst += (thrTarget - ai.throttleEst) * Math.min(1, dt * 8);
+
         const prevT = ai.t;
         ai.t = (ai.t + (ai.speed * dt) / trackLen) % 1;
         ai.lapTime += dt;
-        if (ai.t < prevT) {
+        // Il giro si conta passando sotto il ponte di cronometraggio, come per il giocatore
+        const lineT = this.lapLineT ?? 0;
+        const crossed = ai.t >= prevT ? prevT < lineT && ai.t >= lineT : prevT < lineT || ai.t >= lineT;
+        if (dt > 0 && crossed) {
           ai.laps++;
           if (ai.lapTime > 3.8) {
             ai.lastLap = ai.lapTime;
@@ -1707,6 +1794,9 @@ export class ClubEnvironment {
         // Spostamento laterale fluido in corsia (e scarto rapido quando commette un errore)
         const latRate = ai.errorState === 'none' ? 2.8 : 4.2;
         ai.laneOffset += (ai.targetLaneOffset - ai.laneOffset) * Math.min(1, dt * latRate);
+        // Spinta laterale ricevuta in un contatto: si smorza con l'aderenza delle gomme
+        ai.laneOffset = clamp(ai.laneOffset + ai.latVel * dt, -maxSafeOffset, maxSafeOffset);
+        ai.latVel *= Math.exp(-dt * 7);
 
         // Angolo di imbardata extra (scodata/controsterzo visibile quando sbaglia)
         let targetYawSlip = 0;
@@ -1719,20 +1809,121 @@ export class ClubEnvironment {
           targetRoll = crossSign * 0.14;
         }
         ai.yawSlip += (targetYawSlip - ai.yawSlip) * Math.min(1, dt * 12);
+        ai.yawKick = (ai.yawKick || 0) * Math.exp(-dt * 5);
         ai.rollAngle += (targetRoll - ai.rollAngle) * Math.min(1, dt * 14);
 
-        const pt = this.curve.getPointAt(ai.t);
-        const tan = this.curve.getTangentAt(ai.t).normalize();
-        const normal = new THREE.Vector3(-tan.z, 0, tan.x);
-        const worldPos = pt.clone().addScaledVector(normal, ai.laneOffset);
-
-        ai.carObj.root.position.set(worldPos.x, 0.008, worldPos.z);
-        ai.carObj.root.rotation.set(ai.rollAngle, Math.atan2(-tan.z, tan.x) + ai.yawSlip, 0);
+        this.placeAiCar(ai);
 
         for (const w of ai.carObj.wheels) {
           w.g.rotation.z -= (ai.speed * dt) / w.r;
         }
       }
     }
+  }
+
+  placeAiCar(ai) {
+    const pt = this.curve.getPointAt(ai.t);
+    const tan = this.curve.getTangentAt(ai.t).normalize();
+    ai.x = pt.x - tan.z * ai.laneOffset;
+    ai.z = pt.z + tan.x * ai.laneOffset;
+    const yaw = ai.yawSlip + (ai.yawKick || 0);
+    // Direzione del muso nel piano (yaw positivo = come l'heading del giocatore)
+    const h = Math.atan2(tan.x, tan.z) + yaw;
+    ai.fx = Math.sin(h);
+    ai.fz = Math.cos(h);
+    ai.carObj.root.position.set(ai.x, 0.008, ai.z);
+    ai.carObj.root.rotation.set(ai.rollAngle, Math.atan2(-tan.z, tan.x) + yaw, 0);
+  }
+
+  // Contatti fisici tra tutte le auto in pista. player: { active, state } dell'auto del giocatore.
+  // Restituisce i contatti (per i suoni) già risolti: posizioni e velocità sono aggiornate.
+  resolveCarContacts(player) {
+    if (!this.curve) return [];
+    const trackLen = Math.max(12, this.totalTrackLength);
+    const laneHalf = (this.activeTrackSpec?.laneWidth || 0.8) * 0.5;
+    const maxSafeOffset = Math.max(0.14, laneHalf - 0.075);
+    const bodies = [];
+
+    if (player?.active) {
+      const st = player.state;
+      const fx = Math.sin(st.heading);
+      const fz = Math.cos(st.heading);
+      bodies.push({
+        id: 'player',
+        x: st.x,
+        z: st.z,
+        fx,
+        fz,
+        vx: st.vx,
+        vz: st.vz,
+        halfSeg: CAR_HALF_SEG,
+        radius: CAR_RADIUS,
+        push(dx, dz) {
+          st.x += dx;
+          st.z += dz;
+          this.x = st.x;
+          this.z = st.z;
+        },
+        impulse(jx, jz, px, pz) {
+          st.vx += jx;
+          st.vz += jz;
+          this.vx = st.vx;
+          this.vz = st.vz;
+          st.angularVel = clamp(st.angularVel + yawFromImpulse(st.x, st.z, jx, jz, px, pz), -9, 9);
+          st.speed = st.vx * fx + st.vz * fz;
+        }
+      });
+    }
+
+    if (this.aiLevel !== 'none' && this.aiCarsGroup.visible) {
+      for (const ai of this.aiCars) {
+        const tan = this.curve.getTangentAt(ai.t).normalize();
+        const nx = -tan.z;
+        const nz = tan.x;
+        bodies.push({
+          id: ai.id,
+          x: ai.x,
+          z: ai.z,
+          fx: ai.fx,
+          fz: ai.fz,
+          vx: tan.x * ai.speed + nx * ai.latVel,
+          vz: tan.z * ai.speed + nz * ai.latVel,
+          halfSeg: CAR_HALF_SEG * 1.1,
+          radius: CAR_RADIUS * 1.05,
+          push(dx, dz) {
+            ai.t = (((ai.t + (dx * tan.x + dz * tan.z) / trackLen) % 1) + 1) % 1;
+            ai.laneOffset = clamp(ai.laneOffset + dx * nx + dz * nz, -maxSafeOffset, maxSafeOffset);
+            this.x += dx;
+            this.z += dz;
+          },
+          impulse(jx, jz, px, pz) {
+            ai.speed = Math.max(0, ai.speed + jx * tan.x + jz * tan.z);
+            ai.latVel = clamp(ai.latVel + jx * nx + jz * nz, -2.5, 2.5);
+            ai.yawKick = clamp((ai.yawKick || 0) + yawFromImpulse(ai.x, ai.z, jx, jz, px, pz) * 0.05, -0.6, 0.6);
+            this.vx += jx;
+            this.vz += jz;
+          }
+        });
+      }
+    }
+
+    if (bodies.length < 2) return [];
+    // Due passate: con tre auto a contatto la seconda sistema le compenetrazioni create dalla prima
+    const contacts = resolveCarContacts(bodies);
+    resolveCarContacts(bodies);
+    for (const ai of this.aiCars) this.placeAiCar(ai);
+    return contacts;
+  }
+
+  // Stato dei motori avversari per l'audio (velocità relativa, gas stimato, posizione nella sala)
+  getOpponentEngineStates() {
+    if (this.aiLevel === 'none' || !this.aiCarsGroup.visible) return [];
+    return this.aiCars.map((ai) => ({
+      id: ai.id,
+      speedRatio: ai.speed / 5.6,
+      throttle: this.aiPaused ? 0 : ai.throttleEst,
+      pos: { x: ai.x, y: TRACK_Y + 0.03, z: ai.z },
+      pitchBase: 320 + (ai.driver.pace || 1) * 30
+    }));
   }
 }

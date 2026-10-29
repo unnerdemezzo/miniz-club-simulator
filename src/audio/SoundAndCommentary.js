@@ -17,23 +17,55 @@ export class SoundAndCommentary {
     this.pendingLine = null;
     this.motorActive = true;
     this.lastBarrierHitTime = 0;
+    this.lastContactTime = new Map();
+    this.availableVoices = [];
+    this.onVoicesChanged = null;
+    // Un motore per ogni auto in pista (giocatore + avversari), ciascuno con il suo panner 3D
+    this.engines = new Map();
+    this.masterBus = null;
+    this.noiseBuffer = null;
 
     this.initSpeechSynthesis();
     this.bindUnlock();
     this.bindVisibility();
   }
 
+  // Voce del telecronista: solo voci italiane, scegliendo per prime quelle neurali/naturali. Prima, se il
+  // browser non trovava una voce "it", la frase veniva letta da una voce straniera (l'effetto "cinese che
+  // parla italiano"); ora in quel caso si lascia scegliere al sistema la sua voce it-IT predefinita.
+  static scoreVoice(v) {
+    const name = v.name || '';
+    let score = 0;
+    if (/^it[-_]IT$/i.test(v.lang)) score += 6;
+    if (/natural|neural|online/i.test(name)) score += 60; // Edge / Windows 11: Elsa, Isabella, Diego Online (Natural)
+    if (/premium|enhanced|migliorat|siri/i.test(name)) score += 45; // macOS / iOS: voci scaricate di qualità alta
+    if (/google/i.test(name)) score += 30; // Chrome: Google italiano
+    if (/elsa|isabella|diego|giuseppe|federica|alice|luca|paola|emma|cosimo/i.test(name)) score += 8;
+    if (/espeak|compact|eloquence|grandma|grandpa|rocko|shelley|flo|reed|sandy/i.test(name)) score -= 40;
+    return score;
+  }
+
   initSpeechSynthesis() {
     if (!('speechSynthesis' in window)) return;
     const pickVoice = () => {
       const voices = window.speechSynthesis.getVoices();
+      this.availableVoices = voices
+        .filter((v) => /^it([-_]|$)/i.test(v.lang || ''))
+        .sort((a, b) => SoundAndCommentary.scoreVoice(b) - SoundAndCommentary.scoreVoice(a));
+      const wanted = this.profileManager.state.audio.voiceName;
       this.italianVoice =
-        voices.find((v) => v.lang.toLowerCase().startsWith('it') && /google|microsoft|elsa|cosimo|luca/i.test(v.name)) ||
-        voices.find((v) => v.lang.toLowerCase().startsWith('it')) ||
-        null;
+        (wanted && this.availableVoices.find((v) => v.name === wanted)) || this.availableVoices[0] || null;
+      this.onVoicesChanged?.(this.availableVoices, this.italianVoice);
     };
     pickVoice();
     window.speechSynthesis.onvoiceschanged = pickVoice;
+    this.refreshVoices = pickVoice;
+  }
+
+  setVoiceByName(name) {
+    this.profileManager.state.audio.voiceName = name || '';
+    this.profileManager.save();
+    this.refreshVoices?.();
   }
 
   bindUnlock() {
@@ -43,6 +75,10 @@ export class SoundAndCommentary {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
         this.ctx = new AudioCtx();
+        this.masterBus = this.ctx.createDynamicsCompressor();
+        this.masterBus.threshold.value = -14;
+        this.masterBus.ratio.value = 4;
+        this.masterBus.connect(this.ctx.destination);
         this.setupMotorSynth();
         this.isAudioUnlocked = true;
       } catch (e) {
@@ -71,46 +107,131 @@ export class SoundAndCommentary {
       const now = this.ctx.currentTime;
       this.motorGain.gain.setTargetAtTime(0, now, 0.06);
       this.skidGain?.gain.setTargetAtTime(0, now, 0.06);
+      for (const eng of this.engines.values()) eng.gain.gain.setTargetAtTime(0, now, 0.06);
     }
+  }
+
+  getNoiseBuffer() {
+    if (!this.noiseBuffer) {
+      const len = Math.floor(this.ctx.sampleRate * 1.5);
+      this.noiseBuffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const data = this.noiseBuffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    }
+    return this.noiseBuffer;
+  }
+
+  // Panner 3D: il suono arriva dal punto della pista in cui si trova l'auto, ascoltato dalla telecamera
+  createPanner() {
+    const p = this.ctx.createPanner();
+    p.panningModel = 'HRTF';
+    p.distanceModel = 'inverse';
+    p.refDistance = 0.9;
+    p.rolloffFactor = 1.1;
+    p.maxDistance = 30;
+    return p;
+  }
+
+  setPannerPosition(panner, pos) {
+    if (!panner || !pos) return;
+    const t = this.ctx.currentTime;
+    if (panner.positionX) {
+      panner.positionX.setTargetAtTime(pos.x, t, 0.02);
+      panner.positionY.setTargetAtTime(pos.y, t, 0.02);
+      panner.positionZ.setTargetAtTime(pos.z, t, 0.02);
+    } else {
+      panner.setPosition(pos.x, pos.y, pos.z);
+    }
+  }
+
+  // Posizione e orientamento dell'ascoltatore = telecamera attiva (palco, inseguimento, replay)
+  updateListener(camera) {
+    if (!this.ctx || !camera) return;
+    const l = this.ctx.listener;
+    const e = camera.matrixWorld.elements;
+    const px = e[12], py = e[13], pz = e[14];
+    const fx = -e[8], fy = -e[9], fz = -e[10];
+    const ux = e[4], uy = e[5], uz = e[6];
+    const t = this.ctx.currentTime;
+    if (l.positionX) {
+      l.positionX.setTargetAtTime(px, t, 0.02);
+      l.positionY.setTargetAtTime(py, t, 0.02);
+      l.positionZ.setTargetAtTime(pz, t, 0.02);
+      l.forwardX.setTargetAtTime(fx, t, 0.02);
+      l.forwardY.setTargetAtTime(fy, t, 0.02);
+      l.forwardZ.setTargetAtTime(fz, t, 0.02);
+      l.upX.setTargetAtTime(ux, t, 0.02);
+      l.upY.setTargetAtTime(uy, t, 0.02);
+      l.upZ.setTargetAtTime(uz, t, 0.02);
+    } else {
+      l.setPosition(px, py, pz);
+      l.setOrientation(fx, fy, fz, ux, uy, uz);
+    }
+  }
+
+  // Motorino 130 a spazzole + cascata pignone/corona: sibilo acuto (dente sega), armonica degli
+  // ingranaggi (triangolo) e fruscio delle spazzole (rumore filtrato che segue i giri)
+  createEngine(id) {
+    const ctx = this.ctx;
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    osc1.type = 'sawtooth';
+    osc2.type = 'triangle';
+    osc1.frequency.value = 180;
+    osc2.frequency.value = 500;
+    // Ogni motore ha una leggera stonatura propria: quattro auto insieme non suonano come una sola
+    const detune = (Math.random() - 0.5) * 60;
+    osc1.detune.value = detune;
+    osc2.detune.value = detune;
+
+    const osc1Gain = ctx.createGain();
+    osc1Gain.gain.value = 0.55;
+    const osc2Gain = ctx.createGain();
+    osc2Gain.gain.value = 0.32;
+
+    const brush = ctx.createBufferSource();
+    brush.buffer = this.getNoiseBuffer();
+    brush.loop = true;
+    brush.playbackRate.value = 0.8 + Math.random() * 0.4;
+    const brushFilter = ctx.createBiquadFilter();
+    brushFilter.type = 'bandpass';
+    brushFilter.frequency.value = 3200;
+    brushFilter.Q.value = 0.9;
+    const brushGain = ctx.createGain();
+    brushGain.gain.value = 0.22;
+
+    const tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 4200;
+    tone.Q.value = 0.7;
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    const panner = this.createPanner();
+
+    osc1.connect(osc1Gain).connect(tone);
+    osc2.connect(osc2Gain).connect(tone);
+    brush.connect(brushFilter).connect(brushGain).connect(tone);
+    tone.connect(gain).connect(panner).connect(this.masterBus || ctx.destination);
+    osc1.start();
+    osc2.start();
+    brush.start();
+
+    const eng = { id, osc1, osc2, brushFilter, brushGain, tone, gain, panner };
+    this.engines.set(id, eng);
+    return eng;
   }
 
   setupMotorSynth() {
     if (!this.ctx) return;
 
-    // Doppio oscillatore per riprodurre il tipico sibilo acuto del motorino Mini-Z + cascata ingranaggi pignone/corona
-    this.motorOsc1 = this.ctx.createOscillator();
-    this.motorOsc2 = this.ctx.createOscillator();
-    const filter = this.ctx.createBiquadFilter();
-    this.motorGain = this.ctx.createGain();
+    // Motore dell'auto del giocatore (stesso sintetizzatore degli avversari, posizionato nello spazio)
+    const player = this.createEngine('player');
+    this.motorGain = player.gain;
 
-    this.motorOsc1.type = 'sawtooth';
-    this.motorOsc2.type = 'triangle';
-    this.motorOsc1.frequency.value = 180;
-    this.motorOsc2.frequency.value = 540;
-
-    filter.type = 'bandpass';
-    filter.frequency.value = 1100;
-    filter.Q.value = 1.8;
-
-    this.motorGain.gain.value = 0.0;
-
-    this.motorOsc1.connect(filter);
-    this.motorOsc2.connect(filter);
-    filter.connect(this.motorGain);
-    this.motorGain.connect(this.ctx.destination);
-
-    this.motorOsc1.start();
-    this.motorOsc2.start();
-
-    // Generatore fruscio gomme su tappeto RCP (rumore bianco filtrato)
-    const bufferSize = this.ctx.sampleRate * 1.5;
-    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
-    }
+    // Generatore fruscio gomme su tappeto RCP (rumore bianco filtrato), che parte dall'auto del giocatore
     const noise = this.ctx.createBufferSource();
-    noise.buffer = noiseBuffer;
+    noise.buffer = this.getNoiseBuffer();
     noise.loop = true;
 
     const skidFilter = this.ctx.createBiquadFilter();
@@ -123,35 +244,119 @@ export class SoundAndCommentary {
 
     noise.connect(skidFilter);
     skidFilter.connect(this.skidGain);
-    this.skidGain.connect(this.ctx.destination);
+    this.skidGain.connect(player.panner);
     noise.start();
   }
 
-  updateMotorSound(speedRatio, throttle, slipAmount, motorSpec) {
-    if (!this.ctx || !this.motorGain || !this.motorActive) return;
-    if (this.ctx.state === 'suspended' && !document.hidden) {
-      this.ctx.resume().catch(() => {});
-    }
-
+  // speedRatio: velocità / velocità massima del motore (0..1,3), throttle: 0..1
+  driveEngine(eng, speedRatio, throttle, basePitch, pos, volumeScale = 1) {
     const audioCfg = this.profileManager.state.audio;
     const baseVol = audioCfg.motorVolume ?? 0.65;
-    const basePitch = motorSpec?.pitchBase || 340;
-
     const absSpeed = Math.min(1.3, Math.abs(speedRatio));
     const freq1 = basePitch * 0.45 + absSpeed * basePitch * 2.4 + throttle * 95;
     const freq2 = freq1 * 2.75; // Armonica pignone
 
     const now = this.ctx.currentTime;
-    this.motorOsc1.frequency.setTargetAtTime(freq1, now, 0.03);
-    this.motorOsc2.frequency.setTargetAtTime(freq2, now, 0.03);
+    eng.osc1.frequency.setTargetAtTime(freq1, now, 0.03);
+    eng.osc2.frequency.setTargetAtTime(freq2, now, 0.03);
+    eng.brushFilter.frequency.setTargetAtTime(2200 + absSpeed * 3600, now, 0.05);
+    eng.brushGain.gain.setTargetAtTime(0.12 + throttle * 0.22, now, 0.05);
+    eng.tone.frequency.setTargetAtTime(2600 + absSpeed * 3800 + throttle * 900, now, 0.05);
 
-    const targetGain = (0.012 + absSpeed * 0.065 + throttle * 0.035) * baseVol;
-    // Auto ferma e grilletto rilasciato: una Mini-Z vera è muta (prima restava un fischio continuo a -54 dB)
-    this.motorGain.gain.setTargetAtTime(absSpeed < 0.01 && throttle < 0.02 ? 0 : targetGain, now, 0.04);
+    const targetGain = (0.05 + absSpeed * 0.2 + throttle * 0.1) * baseVol * volumeScale;
+    // Auto ferma e grilletto rilasciato: una Mini-Z vera è muta
+    eng.gain.gain.setTargetAtTime(absSpeed < 0.01 && throttle < 0.02 ? 0 : targetGain, now, 0.04);
+    this.setPannerPosition(eng.panner, pos);
+  }
+
+  updateMotorSound(speedRatio, throttle, slipAmount, motorSpec, pos) {
+    if (!this.ctx || !this.motorGain || !this.motorActive) return;
+    if (this.ctx.state === 'suspended' && !document.hidden) {
+      this.ctx.resume().catch(() => {});
+    }
+    const player = this.engines.get('player');
+    this.driveEngine(player, speedRatio, throttle, motorSpec?.pitchBase || 340, pos);
 
     if (this.skidGain) {
-      const skidTarget = Math.min(0.06, Math.max(0, slipAmount - 0.18) * 0.09) * baseVol;
-      this.skidGain.gain.setTargetAtTime(skidTarget, now, 0.05);
+      const baseVol = this.profileManager.state.audio.motorVolume ?? 0.65;
+      const skidTarget = Math.min(0.18, Math.max(0, slipAmount - 0.18) * 0.27) * baseVol;
+      this.skidGain.gain.setTargetAtTime(skidTarget, this.ctx.currentTime, 0.05);
+    }
+  }
+
+  // Motori degli avversari: cars = [{ id, speedRatio, throttle, pos }]
+  updateOpponentEngines(cars) {
+    if (!this.ctx) return;
+    const seen = new Set();
+    for (const c of cars) {
+      seen.add(c.id);
+      const eng = this.engines.get(c.id) || this.createEngine(c.id);
+      if (!this.motorActive) {
+        eng.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.06);
+        continue;
+      }
+      this.driveEngine(eng, c.speedRatio, c.throttle, c.pitchBase || 340, c.pos, 0.9);
+    }
+    // Avversari tolti (pista libera): il loro motore si spegne
+    for (const [id, eng] of this.engines) {
+      if (id !== 'player' && !seen.has(id)) eng.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.06);
+    }
+  }
+
+  // Contatto tra due Mini-Z: "clac" secco delle carrozzerie in policarbonato + colpo sordo del telaio
+  playCarContact(intensity, pos, pairKey = 'x') {
+    if (!this.ctx) return;
+    const nowMs = performance.now();
+    if (nowMs - (this.lastContactTime.get(pairKey) || 0) < 110) return;
+    this.lastContactTime.set(pairKey, nowMs);
+
+    const k = Math.min(1, Math.max(0.05, intensity));
+    const vol = (0.12 + k * 0.55) * (this.profileManager.state.audio.motorVolume ?? 0.65);
+    const now = this.ctx.currentTime;
+    const panner = this.createPanner();
+    this.setPannerPosition(panner, pos);
+    panner.connect(this.masterBus || this.ctx.destination);
+
+    // Clac della plastica: raffica di rumore brevissima e brillante
+    const click = this.ctx.createBufferSource();
+    click.buffer = this.getNoiseBuffer();
+    const clickFilter = this.ctx.createBiquadFilter();
+    clickFilter.type = 'bandpass';
+    clickFilter.frequency.value = 2400 + Math.random() * 1800;
+    clickFilter.Q.value = 2.2;
+    const clickGain = this.ctx.createGain();
+    const clickDur = 0.035 + k * 0.05;
+    clickGain.gain.setValueAtTime(vol, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.0008, now + clickDur);
+    click.connect(clickFilter).connect(clickGain).connect(panner);
+    click.start(now, Math.random() * 1.2);
+    click.stop(now + clickDur + 0.02);
+
+    // Tonfo del telaio e delle gomme che si toccano
+    const thump = this.ctx.createOscillator();
+    thump.type = 'triangle';
+    thump.frequency.setValueAtTime(420 - k * 160, now);
+    thump.frequency.exponentialRampToValueAtTime(110, now + 0.07);
+    const thumpGain = this.ctx.createGain();
+    thumpGain.gain.setValueAtTime(vol * 0.7, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.09);
+    thump.connect(thumpGain).connect(panner);
+    thump.start(now);
+    thump.stop(now + 0.1);
+
+    // Strisciata: se il contatto è lungo e leggero si sente lo sfregamento delle carrozzerie
+    if (k < 0.35) {
+      const scrape = this.ctx.createBufferSource();
+      scrape.buffer = this.getNoiseBuffer();
+      const sf = this.ctx.createBiquadFilter();
+      sf.type = 'highpass';
+      sf.frequency.value = 3800;
+      const sg = this.ctx.createGain();
+      sg.gain.setValueAtTime(vol * 0.35, now);
+      sg.gain.exponentialRampToValueAtTime(0.0008, now + 0.14);
+      scrape.connect(sf).connect(sg).connect(panner);
+      scrape.start(now, Math.random() * 1.2);
+      scrape.stop(now + 0.16);
     }
   }
 
@@ -203,7 +408,7 @@ export class SoundAndCommentary {
   }
 
   // Suono morbido dell'impatto contro le sponde in gomma RCP
-  playBarrierHit(intensity = 0.5) {
+  playBarrierHit(intensity = 0.5, pos = null) {
     if (!this.ctx) return;
     // La fisica gira a 2 sotto-passi: strisciando sulla sponda il colpo partiva a raffica ogni fotogramma
     const nowMs = performance.now();
@@ -216,10 +421,16 @@ export class SoundAndCommentary {
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(135, now);
     osc.frequency.exponentialRampToValueAtTime(42, now + 0.11);
-    g.gain.setValueAtTime(vol, now);
+    g.gain.setValueAtTime(vol * 2.2, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
     osc.connect(g);
-    g.connect(this.ctx.destination);
+    if (pos) {
+      const panner = this.createPanner();
+      this.setPannerPosition(panner, pos);
+      g.connect(panner).connect(this.masterBus || this.ctx.destination);
+    } else {
+      g.connect(this.ctx.destination);
+    }
     osc.start(now);
     osc.stop(now + 0.13);
   }
@@ -305,10 +516,11 @@ export class SoundAndCommentary {
     try {
       if (interrupt || window.speechSynthesis.speaking) window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'it-IT';
+      utter.lang = this.italianVoice?.lang || 'it-IT';
       if (this.italianVoice) utter.voice = this.italianVoice;
-      utter.rate = 0.92; // Prima 1,12: troppo veloce e difficile da seguire mentre si guida
-      utter.pitch = 1.0;
+      // Le voci neurali suonano naturali a velocità 1: rallentarle le rende strascicate e robotiche
+      utter.rate = Math.max(0.7, Math.min(1.4, audioCfg.voiceRate ?? 1.0));
+      utter.pitch = Math.max(0.7, Math.min(1.3, audioCfg.voicePitch ?? 1.0));
       utter.volume = Math.max(0, Math.min(1, audioCfg.commentaryVolume ?? 0.95));
       utter.onend = finish;
       utter.onerror = finish;

@@ -274,6 +274,19 @@ body, html {
   gap: 7px;
 }
 
+/* Su schermi meno larghi i riquadrini vanno a capo invece di spingere fuori il pulsante Menu & Banco Box */
+.status-boxes-cluster {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 5px;
+}
+
+.top-actions-cluster {
+  flex-shrink: 0;
+}
+
 .brand-cluster {
   background: rgba(11, 15, 25, 0.86);
   backdrop-filter: blur(10px);
@@ -582,12 +595,17 @@ body, html {
 }
 
 .quick-utility-row {
-  display: flex;
+  /* 4 pulsanti in una riga da 247 px non ci stavano: "Banco Lavoro" usciva dal pannello */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
 
 .utility-btn {
-  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: rgba(30, 41, 59, 0.9);
   border: 1px solid rgba(250, 204, 21, 0.4);
   color: #fde047;
@@ -1577,6 +1595,17 @@ body.in-race-setup .commentary-banner {
   font-weight: 800;
 }
 
+@media (max-width: 1400px) {
+  .hud-sub,
+  .version-box {
+    display: none;
+  }
+  .top-actions-cluster .hud-action-btn {
+    padding: 8px 9px;
+    font-size: 11.5px;
+  }
+}
+
 @media (max-width: 640px) {
   .race-setup-grid {
     grid-template-columns: 1fr;
@@ -1587,4 +1616,32 @@ body.in-race-setup .commentary-banner {
   .start-race-btn {
     width: 100%;
   }
+}
+
+/* ================= SCHERMO & PROSPETTIVA (SCHEDA 5) ================= */
+body.in-race-setup .menu-modal {
+  z-index: 9500;
+}
+
+.display-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.display-fields select,
+#sel-commentary-voice {
+  width: 100%;
+  min-width: 0;
+}
+
+.setup-display-btn {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+
+.sys-card .setup-field {
+  padding: 0;
+  border: none;
+  background: none;
 }

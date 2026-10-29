@@ -16,3 +16,10 @@ Simulatore 3D (Three.js + Vite) di auto RC Kyosho Mini-Z in un club indoor. L'ob
 ## Flusso del gioco
 
 L'app si apre sulla schermata **Impostazioni gara** (`#race-setup-screen`, `showRaceSetup()` in `src/main.js`): l'auto non è in pista finché non si preme INIZIA. Poi semaforo (`beginRace()`), gara (`racePhase === 'racing'`) e risultati (`finishRace()`). Il pulsante "Installa App" compare nella schermata iniziale finché l'app non è installata ed è sempre facoltativo.
+
+## Auto in pista
+
+- Le auto si toccano davvero: `src/car/CarContacts.js` (capsule in pianta, impulsi a masse uguali) risolto ogni fotogramma da `ClubEnvironment.resolveCarContacts()`, per giocatore e avversari. Gli avversari evitano/sorpassano chi hanno davanti.
+- Griglia di partenza: `ClubEnvironment.gridSlot(k)` (0 = pole del giocatore, file sfalsate ogni 30 cm). I giri degli avversari si contano sotto il ponte (`lapLineT`).
+- Audio: ogni auto ha il suo motore con panner 3D (`SoundAndCommentary.createEngine`), l'ascoltatore è la telecamera.
+- Vista dal palco: il campo visivo viene da Menu → scheda 5 "Schermo" (misura, formato, distanza, zoom), `getStandFov()` in `src/main.js`.
