@@ -1,4 +1,4 @@
-import { DEFAULT_CAR_SETUP } from '../data/parts.js';
+import { DEFAULT_CAR_SETUP, CAR_BODIES } from '../data/parts.js';
 import { APP_VERSION } from '../version.js';
 
 const STORAGE_KEY = 'miniz_club_sim_state_v1';
@@ -148,6 +148,7 @@ export class ProfileManager {
       const merged = {
         ...def,
         ...parsed,
+        currentBodyId: CAR_BODIES.some((b) => b.id === parsed.currentBodyId) ? parsed.currentBodyId : 'ferrari_499p',
         appVersion: APP_VERSION,
         audio: { ...def.audio, ...(parsed.audio || {}) },
         display: { ...def.display, ...(parsed.display || {}) },

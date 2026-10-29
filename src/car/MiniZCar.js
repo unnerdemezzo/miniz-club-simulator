@@ -221,7 +221,7 @@ export class MiniZCar {
               const mName = mat.name || '';
               if (mat.map) mat.map.anisotropy = 8;
 
-              if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
+              if (/^Body(\.\d+)?$/i.test(mName) || /^main$/i.test(mName) || /paint|carpaint|geomainbody|mat_44|exterior_mm_ext|livery/i.test(mName)) {
                 // Vernice vera con saturazione attenuata per il massimo fotorealismo
                 if (mat.color) {
                   mat.color.set(tintHex);
@@ -229,7 +229,7 @@ export class MiniZCar {
                   mat.color.getHSL(hsl);
                   mat.color.setHSL(hsl.h, hsl.s * 0.62, hsl.l * 0.89);
                 }
-                mat.metalness = 0.05;
+                mat.metalness = 0.05; mat.metalnessMap = null;
                 mat.roughness = 0.34;
                 if ('clearcoat' in mat) {
                   mat.clearcoat = 0.85;
@@ -327,10 +327,10 @@ export class MiniZCar {
         const rawWheels = { lf: null, rf: null, lr: null, rr: null };
         clone.traverse((node) => {
           const n = node.name || '';
-          if (!rawWheels.lf && /^WHEEL_LF(_\d+)?$/i.test(n)) rawWheels.lf = node;
-          else if (!rawWheels.rf && /^WHEEL_RF(_\d+)?$/i.test(n)) rawWheels.rf = node;
-          else if (!rawWheels.lr && /^WHEEL_LR(_\d+)?$/i.test(n)) rawWheels.lr = node;
-          else if (!rawWheels.rr && /^WHEEL_RR(_\d+)?$/i.test(n)) rawWheels.rr = node;
+          if (!rawWheels.lf && /^(WHEEL_LF(_\d+)?|WheelFL)$/i.test(n)) rawWheels.lf = node;
+          else if (!rawWheels.rf && /^(WHEEL_RF(_\d+)?|WheelFR)$/i.test(n)) rawWheels.rf = node;
+          else if (!rawWheels.lr && /^(WHEEL_LR(_\d+)?|WheelRL)$/i.test(n)) rawWheels.lr = node;
+          else if (!rawWheels.rr && /^(WHEEL_RR(_\d+)?|WheelRR)$/i.test(n)) rawWheels.rr = node;
         });
 
         for (const [key, wheelNode] of Object.entries(rawWheels)) {
