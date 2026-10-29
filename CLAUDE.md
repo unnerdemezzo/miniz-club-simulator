@@ -15,11 +15,12 @@ Simulatore 3D (Three.js + Vite) di auto RC Kyosho Mini-Z in un club indoor. L'ob
 
 ## Flusso del gioco
 
-L'app si apre sulla schermata **Impostazioni gara** (`#race-setup-screen`, `showRaceSetup()` in `src/main.js`): l'auto non è in pista finché non si preme INIZIA. Poi semaforo (`beginRace()`), gara (`racePhase === 'racing'`) e risultati (`finishRace()`). Il pulsante "Installa App" compare nella schermata iniziale finché l'app non è installata ed è sempre facoltativo.
+L'app si apre sulla schermata **Impostazioni gara** (`#race-setup-screen`, `showRaceSetup()` in `src/main.js`): l'auto non è in pista finché non si preme INIZIA. Poi semaforo (`beginRace()`), gara (`racePhase === 'racing'`) e risultati (`finishRace()`). Il pulsante "Installa App" (sempre facoltativo) compare nella schermata iniziale e nella barra in alto quando l'installazione è possibile (prompt `beforeinstallprompt`, tenuto da parte già in `index.html`, oppure iPhone/iPad con le istruzioni "Condividi → Aggiungi alla schermata Home") e sparisce quando l'app è installata; stesso schema di `js/pwa.js` in unnerdemezzo/Slot-Car. Icone PNG 192/512/maskable e apple-touch-icon in `public/`.
 
 ## Auto in pista
 
 - Le auto si toccano davvero: `src/car/CarContacts.js` (capsule in pianta, impulsi a masse uguali) risolto ogni fotogramma da `ClubEnvironment.resolveCarContacts()`, per giocatore e avversari. Gli avversari evitano/sorpassano chi hanno davanti.
 - Griglia di partenza: `ClubEnvironment.gridSlot(k)` (0 = pole del giocatore, file sfalsate ogni 30 cm). I giri degli avversari si contano sotto il ponte (`lapLineT`).
 - Audio: ogni auto ha il suo motore con panner 3D (`SoundAndCommentary.createEngine`), l'ascoltatore è la telecamera.
+- Voce telecronista: nella scelta ci sono Alice (predefinita) e le altre voci femminili, più "Voce di Slot Car", la voce maschile scelta con la stessa regola di Slot-Car (`js/commentary.js`: voce italiana predefinita del sistema, poi locale, poi la prima; velocità 1,04). Le altre voci maschili sono escluse (`SoundAndCommentary.isMaleVoice`).
 - Vista dal palco: il campo visivo viene da Menu → scheda 5 "Schermo" (misura, formato, distanza, zoom), `getStandFov()` in `src/main.js`.

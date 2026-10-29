@@ -6,8 +6,19 @@
   <meta name="theme-color" content="#e11d48" />
   <title>Mini-Z Club Simulator • Scala Reale 1:27</title>
   <link rel="manifest" href="/manifest.json" />
-  <link rel="icon" type="image/jpeg" href="/app-icon.jpg" />
-  <link rel="apple-touch-icon" href="/app-icon.jpg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Mini-Z Sim" />
+  <script>
+    // Il browser può offrire l'installazione prima che il gioco sia caricato: l'evento si tiene da parte qui
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      window.__minizInstallPrompt = e;
+    });
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,700;1,900&display=swap" rel="stylesheet" />
@@ -156,6 +167,7 @@
         <div id="setup-install-box" class="setup-install-box hidden">
           <button type="button" id="btn-install-app-start" class="hud-action-btn install-btn">📲 Installa App</button>
           <small>Facoltativo: puoi giocare anche direttamente dal browser.</small>
+          <small class="install-ios-hint hidden">Su iPhone e iPad: tocca <b>Condividi</b> (il quadrato con la freccia in su) e poi <b>Aggiungi alla schermata Home</b>.</small>
         </div>
         <button type="button" id="btn-start-race" class="start-race-btn">▶ INIZIA</button>
       </div>
@@ -247,7 +259,7 @@
       <button id="btn-quick-replay" class="hud-action-btn">
         🎬 Replay
       </button>
-      <button id="btn-install-app" class="hud-action-btn install-btn">
+      <button id="btn-install-app" class="hud-action-btn install-btn hidden">
         📲 Installa App
       </button>
     </div>
@@ -767,11 +779,13 @@
                 <button type="button" class="res-mode-btn active" data-quality="high">🟣 Alta (Massimo Dettaglio Ultra HD)</button>
               </div>
               <hr class="sys-divider" />
-              <h4>📲 Installa sul tuo Computer</h4>
-              <p>Installa Mini-Z Club Simulator come applicazione con icona sul Desktop:</p>
+              <h4>📲 Installa l'App</h4>
+              <p>Installa Mini-Z Club Simulator come applicazione, con la sua icona (facoltativo):</p>
               <button type="button" id="btn-install-app-menu" class="install-btn large-install">
                 📲 Installa App Mini-Z Club Simulator
               </button>
+              <small id="install-menu-status" class="field-desc"></small>
+              <small class="install-ios-hint field-desc hidden">Su iPhone e iPad: tocca <b>Condividi</b> (il quadrato con la freccia in su) e poi <b>Aggiungi alla schermata Home</b>.</small>
             </div>
 
             <!-- Blocco Telecronaca & Audio -->
@@ -790,9 +804,7 @@
               </div>
               <div class="setup-field">
                 <label for="sel-commentary-voice">Voce del telecronista</label>
-                <select id="sel-commentary-voice">
-                  <option value="">Automatica (migliore voce italiana)</option>
-                </select>
+                <select id="sel-commentary-voice"></select>
                 <small id="voice-hint" class="field-desc"></small>
               </div>
               <div class="slider-row">

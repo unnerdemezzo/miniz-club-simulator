@@ -57,8 +57,6 @@ class MiniZSimulatorApp {
     this.fpsLastTime = performance.now();
     this.currentFps = 60;
 
-    // Evento installazione PWA
-    this.deferredInstallPrompt = null;
 
     // Fase della sessione: 'setup' (schermata impostazioni, auto non in pista) → 'countdown' (semaforo)
     // → 'racing' → 'finished' (bandiera a scacchi). Si parte sempre dalle impostazioni.
@@ -74,37 +72,76 @@ class MiniZSimulatorApp {
     this.bootSimulator();
   }
 
+  // App installabile, come in Slot Car: Chrome/Edge/Android offrono il prompt (beforeinstallprompt, tenuto da parte
+  // già in index.html se arriva prima del gioco); su iPhone/iPad si usa "Condividi → Aggiungi alla schermata Home".
   initPWA() {
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
       navigator.serviceWorker
         .register(`/sw.js?v=${encodeURIComponent(APP_VERSION)}`)
         .then((reg) => reg.update().catch(() => {}))
         .catch(() => {});
     }
+    this.isIOS =
+      /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    this.deferredInstallPrompt = window.__minizInstallPrompt || null;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredInstallPrompt = e;
       this.updateInstallVisibility();
     });
     window.addEventListener('appinstalled', () => {
-      this.deferredInstallPrompt = null;
+      this.deferredInstallPrompt = window.__minizInstallPrompt = null;
       this.updateInstallVisibility();
     });
+    window.matchMedia?.('(display-mode: standalone)').addEventListener?.('change', () => this.updateInstallVisibility());
   }
 
   isRunningAsInstalledApp() {
     return (
       window.matchMedia?.('(display-mode: standalone)').matches ||
+      window.matchMedia?.('(display-mode: fullscreen)').matches ||
       window.matchMedia?.('(display-mode: window-controls-overlay)').matches ||
       window.navigator.standalone === true
     );
   }
 
-  // Il pulsante "Installa App" compare nella schermata iniziale finché l'app non è installata
-  // (è sempre facoltativo). Nella barra in alto e nel menu Sistema resta dov'era.
+  // Il pulsante "Installa App" (sempre facoltativo) compare nella schermata iniziale e nella barra in alto solo
+  // quando l'installazione si può davvero fare: prompt del browser disponibile oppure iPhone/iPad. Sparisce
+  // quando l'app è installata. Nel menu Sistema il pulsante resta, con lo stato spiegato sotto.
   updateInstallVisibility() {
-    const box = document.getElementById('setup-install-box');
-    if (box) box.classList.toggle('hidden', this.isRunningAsInstalledApp());
+    const installed = this.isRunningAsInstalledApp();
+    const can = !installed && (Boolean(this.deferredInstallPrompt) || this.isIOS);
+    document.getElementById('setup-install-box')?.classList.toggle('hidden', !can);
+    document.getElementById('btn-install-app')?.classList.toggle('hidden', !can);
+    if (!can) document.querySelectorAll('.install-ios-hint').forEach((el) => el.classList.add('hidden'));
+    const status = document.getElementById('install-menu-status');
+    if (status) {
+      status.textContent = installed
+        ? '✅ L\'app è già installata su questo dispositivo.'
+        : this.deferredInstallPrompt
+          ? 'Funziona anche senza internet una volta installata.'
+          : this.isIOS
+            ? ''
+            : 'Questo browser non offre ora l\'installazione: usa Chrome o Edge (icona "Installa" nella barra degli indirizzi) oppure, se l\'hai già installata, aprila dalle tue app.';
+    }
+  }
+
+  async handleInstallClick() {
+    if (this.deferredInstallPrompt) {
+      const prompt = this.deferredInstallPrompt;
+      this.deferredInstallPrompt = window.__minizInstallPrompt = null;
+      try {
+        await prompt.prompt();
+        await prompt.userChoice;
+      } catch (e) {
+        // Prompt già usato o rifiutato dal browser: si riproverà quando lo riproporrà
+      }
+      this.updateInstallVisibility();
+      return;
+    }
+    if (this.isIOS) {
+      document.querySelectorAll('.install-ios-hint').forEach((el) => el.classList.toggle('hidden'));
+    }
   }
 
   initThreeScene() {
@@ -307,23 +344,8 @@ class MiniZSimulatorApp {
       });
     });
 
-    // Pulsante Installa App (barra superiore e scheda sistema)
-    const handleInstallClick = async () => {
-      if (this.deferredInstallPrompt) {
-        this.deferredInstallPrompt.prompt();
-        await this.deferredInstallPrompt.userChoice;
-        this.deferredInstallPrompt = null;
-      } else if (this.isRunningAsInstalledApp()) {
-        alert('✅ Mini-Z Club Simulator è già installato su questo dispositivo.');
-      } else {
-        alert(
-          '📲 Per installare Mini-Z Club Simulator (facoltativo):\n\n' +
-          '• Su Chrome o Edge clicca sull\'icona "Installa Mini-Z Club Simulator" (schermo con freccia) a destra nella barra degli indirizzi in alto!\n' +
-          '• Su iPhone/iPad (Safari): tasto Condividi → "Aggiungi alla schermata Home".\n' +
-          '• Se l\'hai già installata, la trovi direttamente sul tuo Desktop o nel menu Start.'
-        );
-      }
-    };
+    // Pulsante Installa App (schermata iniziale, barra superiore e scheda sistema)
+    const handleInstallClick = () => this.handleInstallClick();
     document.getElementById('btn-install-app')?.addEventListener('click', handleInstallClick);
     document.getElementById('btn-install-app-menu')?.addEventListener('click', handleInstallClick);
     document.getElementById('btn-install-app-start')?.addEventListener('click', handleInstallClick);
@@ -1482,25 +1504,26 @@ class MiniZSimulatorApp {
     const hint = document.getElementById('voice-hint');
     const audio = this.profileManager.state.audio;
 
-    const fill = (voices, active) => {
+    // Nella scelta ci sono Alice (e le altre voci femminili) e la voce maschile di Slot Car
+    const fill = (voices, active, slotCarVoice) => {
       if (!sel) return;
       sel.innerHTML = '';
-      sel.add(new Option('Automatica (migliore voce italiana)', ''));
       for (const v of voices) {
         const tag = /natural|neural|online|premium|enhanced|migliorat/i.test(v.name) ? ' ★ naturale' : '';
         sel.add(new Option(`${v.name} (${v.lang})${tag}`, v.name));
       }
-      sel.value = audio.voiceName && voices.some((v) => v.name === audio.voiceName) ? audio.voiceName : '';
+      if (slotCarVoice) sel.add(new Option(`Voce di Slot Car · ${slotCarVoice.name}`, SoundAndCommentary.SLOT_CAR_VOICE));
+      sel.value = this.sound.useSlotCarVoice ? SoundAndCommentary.SLOT_CAR_VOICE : active?.name || '';
       if (hint) {
         hint.textContent = !('speechSynthesis' in window)
           ? 'Questo browser non ha la sintesi vocale: restano i sottotitoli.'
-          : voices.length === 0
+          : !active
             ? 'Nessuna voce italiana installata: aggiungila dalle impostazioni di sistema (Lingua → Italiano → Voce) oppure usa Edge o Chrome.'
-            : `In uso: ${active?.name || 'voce di sistema'}. Le voci "Natural"/"Online" (Edge) e "Google italiano" (Chrome) sono le più realistiche.`;
+            : `In uso: ${active.name}.`;
       }
     };
     this.sound.onVoicesChanged = fill;
-    fill(this.sound.availableVoices, this.sound.italianVoice);
+    fill(this.sound.availableVoices, this.sound.italianVoice, this.sound.slotCarVoice);
 
     sel?.addEventListener('change', (e) => {
       this.sound.setVoiceByName(e.target.value);
