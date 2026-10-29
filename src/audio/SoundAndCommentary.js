@@ -30,32 +30,50 @@ export class SoundAndCommentary {
     this.bindVisibility();
   }
 
-  // Voce del telecronista: solo voci italiane, scegliendo per prime quelle neurali/naturali. Prima, se il
-  // browser non trovava una voce "it", la frase veniva letta da una voce straniera (l'effetto "cinese che
-  // parla italiano"); ora in quel caso si lascia scegliere al sistema la sua voce it-IT predefinita.
+  // Voce del telecronista: solo voci italiane. Nella scelta restano Alice e le altre voci femminili, più la
+  // "voce di Slot Car": la stessa regola dell'altra app dell'utente (unnerdemezzo/Slot-Car, js/commentary.js),
+  // cioè la voce italiana predefinita del sistema, altrimenti la prima locale, altrimenti la prima italiana.
+  // Le altre voci maschili non compaiono più.
+  static SLOT_CAR_VOICE = '__slotcar__';
+
+  static isMaleVoice(v) {
+    const name = v.name || '';
+    return (
+      /\b(luca|diego|cosimo|giuseppe|benigno|calimero|cataldo|gianni|lisandro|rinaldo|eddy|reed|rocko|grandpa|nonno)\b/i.test(name) ||
+      /it-it-x-it[cd]/i.test(name) // Android, Google TTS: itc e itd sono voci maschili
+    );
+  }
+
   static scoreVoice(v) {
     const name = v.name || '';
     let score = 0;
+    if (/alice/i.test(name)) score += 100;
     if (/^it[-_]IT$/i.test(v.lang)) score += 6;
-    if (/natural|neural|online/i.test(name)) score += 60; // Edge / Windows 11: Elsa, Isabella, Diego Online (Natural)
-    if (/premium|enhanced|migliorat|siri/i.test(name)) score += 45; // macOS / iOS: voci scaricate di qualità alta
-    if (/google/i.test(name)) score += 30; // Chrome: Google italiano
-    if (/elsa|isabella|diego|giuseppe|federica|alice|luca|paola|emma|cosimo/i.test(name)) score += 8;
-    if (/espeak|compact|eloquence|grandma|grandpa|rocko|shelley|flo|reed|sandy/i.test(name)) score -= 40;
+    if (/natural|neural|online/i.test(name)) score += 60;
+    if (/premium|enhanced|migliorat|siri/i.test(name)) score += 45;
+    if (/google/i.test(name)) score += 30;
+    if (/espeak|compact|eloquence|grandma|shelley|flo|sandy/i.test(name)) score -= 40;
     return score;
   }
 
   initSpeechSynthesis() {
     if (!('speechSynthesis' in window)) return;
     const pickVoice = () => {
-      const voices = window.speechSynthesis.getVoices();
-      this.availableVoices = voices
-        .filter((v) => /^it([-_]|$)/i.test(v.lang || ''))
+      const italian = window.speechSynthesis.getVoices().filter((v) => /^it(-|_)/i.test(v.lang || ''));
+      this.slotCarVoice =
+        italian.find((v) => v.default) || italian.find((v) => v.localService) || italian[0] || null;
+      this.availableVoices = italian
+        // Alice resta sempre in elenco, anche quando è lei la predefinita del sistema
+        .filter((v) => !SoundAndCommentary.isMaleVoice(v) && (v !== this.slotCarVoice || /alice/i.test(v.name)))
         .sort((a, b) => SoundAndCommentary.scoreVoice(b) - SoundAndCommentary.scoreVoice(a));
       const wanted = this.profileManager.state.audio.voiceName;
-      this.italianVoice =
-        (wanted && this.availableVoices.find((v) => v.name === wanted)) || this.availableVoices[0] || null;
-      this.onVoicesChanged?.(this.availableVoices, this.italianVoice);
+      this.useSlotCarVoice = wanted === SoundAndCommentary.SLOT_CAR_VOICE && !!this.slotCarVoice;
+      // Predefinita: Alice (o la migliore voce femminile rimasta), altrimenti la voce di Slot Car
+      this.italianVoice = this.useSlotCarVoice
+        ? this.slotCarVoice
+        : (wanted && this.availableVoices.find((v) => v.name === wanted)) || this.availableVoices[0] || this.slotCarVoice;
+      if (!this.availableVoices.length) this.useSlotCarVoice = !!this.slotCarVoice;
+      this.onVoicesChanged?.(this.availableVoices, this.italianVoice, this.slotCarVoice);
     };
     pickVoice();
     window.speechSynthesis.onvoiceschanged = pickVoice;
@@ -516,10 +534,12 @@ export class SoundAndCommentary {
     try {
       if (interrupt || window.speechSynthesis.speaking) window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = this.italianVoice?.lang || 'it-IT';
+      utter.lang = this.useSlotCarVoice ? 'it-IT' : this.italianVoice?.lang || 'it-IT';
       if (this.italianVoice) utter.voice = this.italianVoice;
-      // Le voci neurali suonano naturali a velocità 1: rallentarle le rende strascicate e robotiche
-      utter.rate = Math.max(0.7, Math.min(1.4, audioCfg.voiceRate ?? 1.0));
+      // Le voci neurali suonano naturali a velocità 1: rallentarle le rende strascicate e robotiche.
+      // La voce di Slot Car parla a 1,04 come nell'altra app (con il cursore al 100%)
+      const baseRate = this.useSlotCarVoice ? 1.04 : 1.0;
+      utter.rate = Math.max(0.7, Math.min(1.4, baseRate * (audioCfg.voiceRate ?? 1.0)));
       utter.pitch = Math.max(0.7, Math.min(1.3, audioCfg.voicePitch ?? 1.0));
       utter.volume = Math.max(0, Math.min(1, audioCfg.commentaryVolume ?? 0.95));
       utter.onend = finish;
