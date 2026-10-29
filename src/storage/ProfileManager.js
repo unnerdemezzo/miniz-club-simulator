@@ -50,7 +50,19 @@ export class ProfileManager {
         commentaryEnabled: true,
         commentaryVolume: 0.95,
         motorVolume: 0.65,
-        beepVolume: 0.85
+        beepVolume: 0.85,
+        voiceName: '', // vuoto = la migliore voce italiana trovata in automatico
+        voiceRate: 1.0,
+        voicePitch: 1.0
+      },
+      // Schermo di chi gioca: con la prospettiva reale il campo visivo della vista dal palco è quello
+      // che lo schermo occupa davvero davanti agli occhi (misura, formato e distanza)
+      display: {
+        realPerspective: true,
+        diagonalInch: 27,
+        aspect: 'auto', // 'auto' | '16:9' | '16:10' | '21:9' | '32:9' | '4:3' | '3:2'
+        distanceCm: 65,
+        zoom: 1.0 // >1 allarga il campo visivo (vedi più pista), <1 lo stringe
       },
       // Profili automatici indicizzati per chiave `${bodyId}__${trackId}`
       autoProfiles: {
@@ -103,6 +115,7 @@ export class ProfileManager {
         ...parsed,
         appVersion: APP_VERSION,
         audio: { ...def.audio, ...(parsed.audio || {}) },
+        display: { ...def.display, ...(parsed.display || {}) },
         autoProfiles: { ...def.autoProfiles, ...(parsed.autoProfiles || {}) },
         lapRecords: { ...def.lapRecords, ...(parsed.lapRecords || {}) }
       };
@@ -248,6 +261,7 @@ export class ProfileManager {
       ...def,
       ...importedState,
       audio: { ...def.audio, ...(importedState.audio || {}) },
+      display: { ...def.display, ...(importedState.display || {}) },
       autoProfiles: { ...def.autoProfiles, ...(importedState.autoProfiles || {}) },
       lapRecords: { ...def.lapRecords, ...(importedState.lapRecords || {}) }
     };

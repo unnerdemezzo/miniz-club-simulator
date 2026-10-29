@@ -147,6 +147,7 @@
         </div>
         <div class="setup-field setup-field-wide">
           <label class="setup-inline-check"><input type="checkbox" id="setup-chk-commentary" /> 🎙️ Telecronaca a voce</label>
+          <button type="button" id="btn-setup-display" class="secondary-btn setup-display-btn">📐 Schermo (misura, formato, distanza), voce e audio</button>
           <small class="field-desc">Gomme, molle, motore e radiocomando si regolano durante la sessione dal Menu &amp; Banco Box.</small>
         </div>
       </div>
@@ -397,7 +398,7 @@
         <button type="button" class="menu-tab-btn" data-tab="tab-workbench">🔧 2. Banco Box (Auto &amp; Assetto)</button>
         <button type="button" class="menu-tab-btn" data-tab="tab-controller">🎮 3. Radiocomando &amp; Profili</button>
         <button type="button" class="menu-tab-btn" data-tab="tab-replay">🎬 4. Replay &amp; Telecamere</button>
-        <button type="button" class="menu-tab-btn" data-tab="tab-system">⚙️ 5. Grafica, Audio &amp; Backup</button>
+        <button type="button" class="menu-tab-btn" data-tab="tab-system">⚙️ 5. Schermo, Voce &amp; Audio</button>
       </nav>
 
       <!-- CONTENUTO DELLE SCHEDE -->
@@ -679,9 +680,67 @@
           </div>
         </section>
 
-        <!-- SCHEDA 5: GRAFICA, AUDIO, INSTALLAZIONE E BACKUP COMPLETO -->
+        <!-- SCHEDA 5: SCHERMO, VOCE, AUDIO, GRAFICA, INSTALLAZIONE E BACKUP COMPLETO -->
         <section id="tab-system" class="tab-pane">
           <div class="system-grid">
+            <!-- Blocco Schermo: misura, formato e distanza (prospettiva reale dal palco piloti) -->
+            <div class="sys-card highlight-card display-card" id="display-settings-card">
+              <h4>📐 Schermo &amp; Prospettiva dal Palco</h4>
+              <p>Indica il tuo schermo e quanto sei lontano: la vista dal palco usa lo stesso angolo visivo che lo schermo occupa davanti ai tuoi occhi, come se guardassi la pista da una finestra.</p>
+              <label class="toggle-Row">
+                <input type="checkbox" id="chk-real-perspective" checked />
+                <span>Prospettiva reale calcolata dallo schermo</span>
+              </label>
+              <div class="display-fields">
+                <div class="setup-field">
+                  <label for="sel-screen-diagonal">Misura schermo (diagonale)</label>
+                  <select id="sel-screen-diagonal">
+                    <option value="13.3">13,3" (portatile)</option>
+                    <option value="14">14" (portatile)</option>
+                    <option value="15.6">15,6" (portatile)</option>
+                    <option value="17.3">17,3" (portatile)</option>
+                    <option value="21.5">21,5"</option>
+                    <option value="24">24"</option>
+                    <option value="27">27"</option>
+                    <option value="32">32"</option>
+                    <option value="34">34" (ultrawide)</option>
+                    <option value="38">38" (ultrawide)</option>
+                    <option value="43">43" (TV)</option>
+                    <option value="49">49" (super ultrawide)</option>
+                    <option value="55">55" (TV)</option>
+                    <option value="65">65" (TV)</option>
+                  </select>
+                </div>
+                <div class="setup-field">
+                  <label for="sel-screen-aspect">Formato schermo</label>
+                  <select id="sel-screen-aspect">
+                    <option value="auto">Automatico (rilevato)</option>
+                    <option value="16:9">16:9</option>
+                    <option value="16:10">16:10</option>
+                    <option value="21:9">21:9 (ultrawide)</option>
+                    <option value="32:9">32:9 (super ultrawide)</option>
+                    <option value="3:2">3:2</option>
+                    <option value="4:3">4:3</option>
+                  </select>
+                </div>
+              </div>
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Distanza occhi–schermo</span>
+                  <strong id="val-screen-distance">65 cm</strong>
+                </div>
+                <input type="range" id="rng-screen-distance" min="30" max="300" step="5" value="65" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Zoom campo visivo (più pista / più dettaglio)</span>
+                  <strong id="val-fov-zoom">100%</strong>
+                </div>
+                <input type="range" id="rng-fov-zoom" min="60" max="180" step="5" value="100" />
+              </div>
+              <div id="display-fov-readout" class="status-feedback">Campo visivo verticale: 50°</div>
+            </div>
+
             <!-- Blocco Backup / Esporta / Importa Tutta la Configurazione -->
             <div class="sys-card highlight-card">
               <h4>🛡️ Backup Totale Configurazione (Salva su File)</h4>
@@ -729,9 +788,31 @@
                 </div>
                 <input type="range" id="rng-vol-comm" min="0" max="100" step="5" value="95" />
               </div>
+              <div class="setup-field">
+                <label for="sel-commentary-voice">Voce del telecronista</label>
+                <select id="sel-commentary-voice">
+                  <option value="">Automatica (migliore voce italiana)</option>
+                </select>
+                <small id="voice-hint" class="field-desc"></small>
+              </div>
               <div class="slider-row">
                 <div class="slider-label-top">
-                  <span>Volume Sibilo Motore Mini-Z &amp; Gomme</span>
+                  <span>Velocità voce</span>
+                  <strong id="val-voice-rate">100%</strong>
+                </div>
+                <input type="range" id="rng-voice-rate" min="75" max="130" step="5" value="100" />
+              </div>
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Tono voce</span>
+                  <strong id="val-voice-pitch">100%</strong>
+                </div>
+                <input type="range" id="rng-voice-pitch" min="80" max="120" step="5" value="100" />
+              </div>
+              <button type="button" id="btn-test-voice" class="secondary-btn">🔊 Prova la voce</button>
+              <div class="slider-row">
+                <div class="slider-label-top">
+                  <span>Volume Motori, Gomme &amp; Contatti (tutte le auto)</span>
                   <strong id="val-vol-motor">65%</strong>
                 </div>
                 <input type="range" id="rng-vol-motor" min="0" max="100" step="5" value="65" />
