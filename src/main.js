@@ -147,8 +147,8 @@ class MiniZSimulatorApp {
   initThreeScene() {
     this.canvas = document.getElementById('sim-canvas');
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1c21);
-    this.scene.fog = new THREE.Fog(0x1a1c21, 18, 34);
+    // Stesso fondo di Slot-Car (js/main.js), senza nebbia: la sala è chiusa e tutta a fuoco
+    this.scene.background = new THREE.Color(0x1a1c20);
 
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.03, 50);
 
@@ -158,8 +158,8 @@ class MiniZSimulatorApp {
       powerPreference: 'high-performance'
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.toneMapping = THREE.NeutralToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -174,15 +174,11 @@ class MiniZSimulatorApp {
     this.orbit.maxPolarAngle = Math.PI * 0.49;
     this.orbit.enabled = false;
 
-    // Illuminazione della sala del club: pannelli LED a soffitto (luce neutra ~4500 K), niente dominanti
-    // marroni o blu. La luce emisferica ha il "terreno" grigio ardesia come la moquette, non marrone.
-    const hemi = new THREE.HemisphereLight(0xf6f3ee, 0x34373d, 0.95);
-    hemi.position.set(2.5, 3.3, -1.8);
-    this.scene.add(hemi);
-
+    // Illuminazione come in Slot-Car (js/club.js): una sola luce principale calda 0xfff2e0 da 1,4 più i riflessi
+    // della sala (scene.environment in ClubEnvironment). Niente luce emisferica né faretti di riempimento.
     // Luce principale dal soffitto: ombre della sala (tavolo, persone, arredi), inquadrata sul solo tavolo pista
     // (10,5 × 6,2 m) invece che su 17 × 14 m, così ogni pixel d'ombra copre circa 5 mm invece di 8.
-    this.mainCeilingLight = new THREE.DirectionalLight(0xfff4e6, 1.75);
+    this.mainCeilingLight = new THREE.DirectionalLight(0xfff2e0, 1.0);
     this.mainCeilingLight.position.set(3.4, 3.2, 0.8);
     this.mainCeilingLight.target.position.set(2.4, 0, -1.9);
     this.mainCeilingLight.castShadow = true;
@@ -199,8 +195,8 @@ class MiniZSimulatorApp {
     this.scene.add(this.mainCeilingLight.target);
 
     // Quota della stessa luce dedicata all'ombra nitida della Mini-Z: stessa direzione, frustum di 1,4 m
-    // che segue l'auto (circa 1,4 mm per pixel). La somma delle due intensità resta quella di prima.
-    this.carShadowLight = new THREE.DirectionalLight(0xfff4e6, 0.75);
+    // che segue l'auto (circa 1,4 mm per pixel). La somma delle due intensità è 1,4 come in Slot-Car.
+    this.carShadowLight = new THREE.DirectionalLight(0xfff2e0, 0.4);
     this.carShadowLight.castShadow = true;
     this.carShadowLight.shadow.mapSize.set(1024, 1024);
     this.carShadowLight.shadow.camera.left = -0.7;
@@ -218,15 +214,7 @@ class MiniZSimulatorApp {
     this.scene.add(this.carShadowLight);
     this.scene.add(this.carShadowLight.target);
 
-    const fill1 = new THREE.PointLight(0xfff0dc, 6.0, 14, 1.4);
-    fill1.position.set(-1.5, 2.8, -2.0);
-    this.scene.add(fill1);
-
-    const fill2 = new THREE.PointLight(0xf1f4ff, 6.0, 14, 1.4);
-    fill2.position.set(6.2, 2.8, -2.0);
-    this.scene.add(fill2);
-
-    // Profili di qualità: risoluzione, ombre e dimensione delle shadow map (nessun post-processing per ora)
+    // Profili di qualità: risoluzione, ombre, shadow map ed effetti fotografici di Slot-Car (AO, bloom)
     this.qualityComposer = createQualityComposer(this.renderer, this.scene, this.camera, this.mainCeilingLight, [
       this.carShadowLight
     ]);
