@@ -428,15 +428,23 @@ export class ControllerManager {
     const trimOffset = (ctrl.steeringTrim ?? 0) / 100;
     const targetSteer = Math.max(-1.0, Math.min(1.0, steerCurved * dualRateFactor + trimOffset));
 
-    // Servo: stessa velocità in andata e al ritorno, come un servo vero (circa 45 ms di costante di tempo al 100%).
-    // Con la tastiera lo sterzo si inserisce più lentamente (i tasti sono tutto o niente) ma ritorna con la velocità del servo.
+    // Servo: in andata segue lo stick con la velocità impostata (circa 45 ms di costante di tempo al 100%);
+    // quando molli lo stick le ruote tornano dritte quasi subito (circa 2 fotogrammi), come una Mini-Z che rientra al centro.
+    // Se lo stick rilasciato rimbalza un attimo oltre il centro, prima si torna dritti e poi si segue il rimbalzo
+    // alla velocità normale, così non c'è un colpo di controsterzo.
+    // Con la tastiera lo sterzo si inserisce più lentamente (i tasti sono tutto o niente).
     const servoRate = 22.0 * ((ctrl.servoSpeed ?? 100) / 100);
-    const isReturningToCenter =
-      Math.abs(targetSteer) <= Math.abs(this.processedSteer) ||
-      targetSteer * this.processedSteer <= 0;
-    const steerRate = usingKeySteer && !isReturningToCenter ? 5.5 * ((ctrl.servoSpeed ?? 100) / 100) : servoRate;
-    this.processedSteer += (targetSteer - this.processedSteer) * Math.min(1, steerRate * dt);
-    if (targetSteer === 0 && Math.abs(this.processedSteer) < 0.001) this.processedSteer = 0;
+    const returnRate = Math.max(55.0, servoRate * 3);
+    const crossingCenter = targetSteer * this.processedSteer < 0;
+    const isReturningToCenter = crossingCenter || Math.abs(targetSteer) < Math.abs(this.processedSteer);
+    const steerGoal = crossingCenter ? 0 : targetSteer;
+    const steerRate = isReturningToCenter
+      ? returnRate
+      : usingKeySteer
+        ? 5.5 * ((ctrl.servoSpeed ?? 100) / 100)
+        : servoRate;
+    this.processedSteer += (steerGoal - this.processedSteer) * Math.min(1, steerRate * dt);
+    if (steerGoal === 0 && Math.abs(this.processedSteer) < 0.01) this.processedSteer = 0;
 
     // Gas: una sola curva (zona morta grilletto → esponenziale del menu → trim), senza filtri: arriva alla fisica nello stesso frame.
     const triggerDeadzone = Math.min(5, ctrl.deadzone ?? 4);
