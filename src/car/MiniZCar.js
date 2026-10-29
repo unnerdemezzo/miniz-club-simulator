@@ -801,13 +801,44 @@ export class MiniZCar {
       if (col.hitWall) {
         this.state.x = col.correctedX;
         this.state.z = col.correctedZ;
-        // Rimbalzo morbido e smorzato sulle sponde in gomma espansa RCP
-        const dot = this.state.vx * col.normalX + this.state.vz * col.normalZ;
+        // Urto sulla sponda RCP: componente normale e tangenziale separate.
+        // La sponda in gomma assorbe quasi tutto il colpo (restituzione bassa),
+        // mentre lungo la barriera la carrozzeria in policarbonato striscia con
+        // poco attrito (Coulomb): l'auto scivola lungo la sponda invece di incollarsi.
+        const nX = col.normalX;
+        const nZ = col.normalZ;
+        const dot = this.state.vx * nX + this.state.vz * nZ;
         if (dot < 0) {
-          this.state.vx = (this.state.vx - 1.35 * dot * col.normalX) * 0.62;
-          this.state.vz = (this.state.vz - 1.35 * dot * col.normalZ) * 0.62;
-          this.state.speed *= 0.62;
-          if (onWallHit) onWallHit(Math.abs(dot));
+          const impact = -dot;
+          // Più forte l'urto, più la gomma espansa si schiaccia e meno restituisce
+          const restitution = clamp(0.32 - impact * 0.04, 0.14, 0.32);
+          const tX = this.state.vx - dot * nX;
+          const tZ = this.state.vz - dot * nZ;
+          const vt = Math.hypot(tX, tZ);
+          // Attrito carrozzeria/sponda: impulso tangenziale ≤ μ · impulso normale
+          const slideFriction = 0.22;
+          const tangentLoss = Math.min(vt, slideFriction * (1 + restitution) * impact);
+          const tScale = vt > 1e-6 ? (vt - tangentLoss) / vt : 0;
+          this.state.vx = tX * tScale + restitution * impact * nX;
+          this.state.vz = tZ * tScale + restitution * impact * nZ;
+
+          // Toccando di striscio il muso viene raddrizzato lungo la sponda
+          if (vt > 0.2) {
+            const fX = Math.sin(this.state.heading);
+            const fZ = Math.cos(this.state.heading);
+            const along = fX * tX + fZ * tZ >= 0 ? 1 : -1;
+            const targetHeading = Math.atan2(along * tX, along * tZ);
+            let diff = targetHeading - this.state.heading;
+            diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+            if (Math.abs(diff) < 1.05) {
+              this.state.heading += diff * Math.min(0.45, impact * 0.18);
+            }
+          }
+
+          const fwdNowX = Math.sin(this.state.heading);
+          const fwdNowZ = Math.cos(this.state.heading);
+          this.state.speed = this.state.vx * fwdNowX + this.state.vz * fwdNowZ;
+          if (onWallHit) onWallHit(impact);
         }
       }
     }
