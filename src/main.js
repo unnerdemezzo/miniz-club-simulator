@@ -22,6 +22,8 @@ import { DRIVERS, ROST } from './club/config.js';
 import { RaceStandings } from './ui/RaceStandings.js';
 import { keepDriverCarVisible } from './club/driver-framing.js';
 import { createQualityComposer } from './club/graphics-quality.js';
+import { setAniso } from './club/util.js';
+import { setHdLiveryQuality } from './car/hd-livery.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { APP_VERSION } from './version.js';
 
@@ -165,6 +167,8 @@ class MiniZSimulatorApp {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Come Slot-Car: filtro anisotropico al massimo che la GPU consente (fino a 16×), per pista e carrozzerie viste di sbieco
+    setAniso(Math.min(16, this.renderer.capabilities.getMaxAnisotropy()));
 
     // Controlli Orbit per la visuale libera in Sala ("Ruota in Sala")
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
@@ -180,8 +184,10 @@ class MiniZSimulatorApp {
     // della sala (scene.environment in ClubEnvironment). Niente luce emisferica né faretti di riempimento.
     // Luce principale dal soffitto: ombre della sala (tavolo, persone, arredi), inquadrata sul solo tavolo pista
     // (10,5 × 6,2 m) invece che su 17 × 14 m, così ogni pixel d'ombra copre circa 5 mm invece di 8.
+    // Stessa direzione del sole di Slot-Car (js/club.js, da 9 m quasi a picco): illumina in pieno i cofani e le livree,
+    // che dal palco sono la parte più visibile delle auto, e accorcia le ombre come nel club vero.
     this.mainCeilingLight = new THREE.DirectionalLight(0xfff2e0, 1.0);
-    this.mainCeilingLight.position.set(3.4, 3.2, 0.8);
+    this.mainCeilingLight.position.set(1.4, 9, 2.4);
     this.mainCeilingLight.target.position.set(2.4, 0, -1.9);
     this.mainCeilingLight.castShadow = true;
     this.mainCeilingLight.shadow.mapSize.set(2048, 2048);
@@ -189,8 +195,8 @@ class MiniZSimulatorApp {
     this.mainCeilingLight.shadow.camera.right = 6.4;
     this.mainCeilingLight.shadow.camera.top = 5.2;
     this.mainCeilingLight.shadow.camera.bottom = -5.2;
-    this.mainCeilingLight.shadow.camera.near = 0.5;
-    this.mainCeilingLight.shadow.camera.far = 8.5;
+    this.mainCeilingLight.shadow.camera.near = 5;
+    this.mainCeilingLight.shadow.camera.far = 15;
     this.mainCeilingLight.shadow.bias = -0.0003;
     this.mainCeilingLight.shadow.normalBias = 0.012;
     this.scene.add(this.mainCeilingLight);
@@ -205,8 +211,8 @@ class MiniZSimulatorApp {
     this.carShadowLight.shadow.camera.right = 0.7;
     this.carShadowLight.shadow.camera.top = 0.7;
     this.carShadowLight.shadow.camera.bottom = -0.7;
-    this.carShadowLight.shadow.camera.near = 0.1;
-    this.carShadowLight.shadow.camera.far = 6;
+    this.carShadowLight.shadow.camera.near = 8;
+    this.carShadowLight.shadow.camera.far = 12;
     this.carShadowLight.shadow.bias = -0.0002;
     this.carShadowLight.shadow.normalBias = 0.002;
     this.carShadowLightOffset = new THREE.Vector3().subVectors(
@@ -293,6 +299,7 @@ class MiniZSimulatorApp {
     if (this.qualityComposer) {
       this.qualityComposer.setQuality(q === 'high' ? 'high' : q === 'medium' ? 'medium' : 'low');
     }
+    setHdLiveryQuality(q === 'high');
 
     // Aggiorna tutti i riquadrini di selezione risoluzione grafica (sia in alto che nel menu)
     document.querySelectorAll('.res-mode-btn').forEach((btn) => {
@@ -1627,6 +1634,9 @@ class MiniZSimulatorApp {
 
     const dt = Math.min(0.05, Math.max(0.001, (now - this.lastFrameTime) / 1000));
     this.lastFrameTime = now;
+
+    // Risoluzione adattiva in qualità Alta: se in gara si scende sotto 28 FPS, si riduce un poco la risoluzione
+    this.qualityComposer.monitor(now, this.racePhase === 'racing');
 
     // 1. Calcolo FPS in tempo reale per il riquadrino in alto
     this.fpsFrames++;

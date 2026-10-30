@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { glbAxleCenters, prepareHypercarBody, visibleMeshBox } from './hypercar-body.js';
+import { trackHdLivery } from './hd-livery.js';
 import {
   REAL_SCALE,
   CAR_BODIES,
@@ -209,6 +210,7 @@ export class MiniZCar {
         const clone = gltfScene.clone(true);
 
         prepareHypercarBody(clone, { keepAllParts: bodySpec.category === 'gt3' });
+        trackHdLivery(clone, bodySpec.glbUrl);
 
         // Calcola il Bounding Box reale solo sui mesh VISIBILI del modello .glb per ridimensionarlo esattamente a 17.2 cm
         const box = visibleMeshBox(clone);

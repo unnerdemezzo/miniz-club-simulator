@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { MAX_ANISO } from '../club/util.js';
 
 // Preparazione comune delle carrozzerie Hypercar .glb (auto del giocatore e avversari).
 // I materiali PBR restano quelli del modello originale (colore base, texture della livrea, metallo/rugosità,
@@ -8,6 +9,11 @@ import * as THREE from 'three';
 const HIDDEN_NODE = /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|STEER_HR|DAMAGE|glow|LED_0|TXLAP|TXDEL|TXFUEL|LAPTIME|DELTA2|FUEL2|WIPER/i;
 const HIDDEN_MATERIAL = /Rim_Blur|GLOW|TRANSPARENTE|kers_|963_|sw_|shift_lights|dials_alpha|logo_cos/i;
 const SHADOW_MATERIAL = /^Body$|^main$|Tyre|RIMS|paint|carpaint|geomainbody|mat_44|exterior_mm_ext/i;
+
+const TEXTURE_SLOTS = [
+  'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap',
+  'clearcoatMap', 'clearcoatNormalMap', 'clearcoatRoughnessMap', 'specularColorMap', 'specularIntensityMap'
+];
 
 // Le GT3 arrivano da Slot-Car già pulite (solo il livello di dettaglio vicino, niente helper): si mostra tutto,
 // perché i filtri qui sopra, pensati per le Hypercar, nasconderebbero adesivi e vetri (es. "stickers_", "TRANSPARENTE").
@@ -27,8 +33,17 @@ export function prepareHypercarBody(root, { keepAllParts = false } = {}) {
         ? node.material.clone()
         : node.material;
     const mats = Array.isArray(node.material) ? node.material : [node.material];
+    // Filtro anisotropico al massimo della GPU su tutte le mappe (colore, rilievo, rugosità, trasparente...):
+    // dal palco la carrozzeria si vede di sbieco e le mappe senza filtro si impastano
     for (const mat of mats) {
-      if (mat?.map) mat.map.anisotropy = 8;
+      if (!mat) continue;
+      for (const slot of TEXTURE_SLOTS) {
+        const tex = mat[slot];
+        if (tex && tex.anisotropy !== MAX_ANISO) {
+          tex.anisotropy = MAX_ANISO;
+          tex.needsUpdate = true;
+        }
+      }
     }
   });
   return root;

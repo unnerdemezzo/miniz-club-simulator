@@ -16,6 +16,8 @@ Modelli scaricati da Sketchfab e adattati al gioco (pezzi separati Body / WHEEL_
 | `porsche_963.glb` | [2023 Porsche 963 LMDh Racecar No.5](https://sketchfab.com/3d-models/2023-porsche-963-lmdh-racecar-no5-0b46fea1c4484a0c887bd0b9aac86f5d) | Ddiaz Design (https://sketchfab.com/ddiaz-design) | CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | `toyota_tr010.glb` | [2026 Toyota TR010 (read description)](https://sketchfab.com/3d-models/2026-toyota-tr010-read-description-9d9800d56b754f65acfba6f91966a5c3) | LMP12 (https://sketchfab.com/LMP12) | CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/) |
 
+Le livree in `hd/` (Alpine A424, BMW M Hybrid V8, Aston Martin Valkyrie) sono le texture originali degli stessi modelli qui sopra, ridotte a 2048 px: valgono gli stessi autori e le stesse licenze.
+
 # Modelli 3D delle GT3
 
 Presi dalla categoria "GT3 NSR" di unnerdemezzo/Slot-Car (`assets/gt3/`, più Vantage Heart of Racing e 296 Verstappen da `assets/scaleauto24/`), che li ha già adattati dai file Sketchfab forniti (pezzi Body / WheelFL / WheelFR / WheelRL / WheelRR, muso verso +X). Per il simulatore: tolto il livello di dettaglio lontano, texture in WebP fino a 1024 px, vertici quantizzati (KHR_mesh_quantization), e incorporate le stesse correzioni materiali che Slot-Car applica in gioco (livrea su vernice non metallica, normali Ferrari 296 orientate, parti opache della Vantage HoR). Livree e colori sono quelli dei modelli originali. Le opere CC BY-NC-SA restano sotto la stessa licenza.
