@@ -103,7 +103,7 @@
 
       <div class="race-setup-grid">
         <div class="setup-field">
-          <label for="setup-sel-body">🏎️ Modello • Categoria Hypercar</label>
+          <label for="setup-sel-body">🏎️ Modello • Categoria Hypercar o GT3</label>
           <select id="setup-sel-body"></select>
         </div>
         <div class="setup-field">
@@ -201,15 +201,19 @@
   <!-- CANVAS 3D DEL SIMULATORE -->
   <canvas id="sim-canvas"></canvas>
 
-  <!-- BARRA SUPERIORE CON RIQUADRINI CHIARI (VERSIONE, 3 RISOLUZIONI GRAFICHE, FPS, MENU, INSTALLA APP) -->
+  <!-- BARRA SUPERIORE: CLASSIFICA LIVE E RIQUADRINI CHIARI (VERSIONE, 3 RISOLUZIONI GRAFICHE, FPS, MENU, INSTALLA APP) -->
   <header class="top-hud-bar">
-    <div class="brand-cluster">
-      <img src="/app-icon.jpg" alt="Icona" class="hud-mini-icon" />
-      <div>
-        <div class="hud-title">MINI-Z CLUB</div>
-        <div id="hud-active-profile-label" class="hud-sub">Ferrari 499P • Circuito Club Veloce</div>
+    <!-- Classifica di gara in tempo reale (attivabile/disattivabile: ✕, Menu → scheda 5 o tasto L) -->
+    <section id="race-standings" class="race-standings" aria-label="Classifica di gara in tempo reale">
+      <div class="standings-head">
+        <span class="standings-live-dot"></span>
+        <span class="standings-title">CLASSIFICA</span>
+        <span class="standings-cols"><span>DISTACCO</span><span>G</span></span>
+        <button type="button" id="btn-standings-hide" class="standings-close" title="Nascondi la classifica (tasto L)" aria-label="Nascondi la classifica">✕</button>
       </div>
-    </div>
+      <ol id="standings-list" class="standings-list"></ol>
+    </section>
+    <button type="button" id="btn-standings-show" class="hud-action-btn standings-show-btn" title="Mostra la classifica (tasto L)">🏁 Classifica</button>
 
     <!-- Riquadrini di stato richiesti: Versione, 3 Modalità Grafiche con selezione evidente, FPS in tempo reale -->
     <div class="status-boxes-cluster">
@@ -775,6 +779,16 @@
                 <input type="range" id="rng-fov-zoom" min="60" max="180" step="5" value="100" />
               </div>
               <div id="display-fov-readout" class="status-feedback">Campo visivo verticale: 50°</div>
+            </div>
+
+            <!-- Blocco Classifica di gara in tempo reale (HUD in alto a sinistra) -->
+            <div class="sys-card">
+              <h4>🏁 Classifica di Gara in Tempo Reale</h4>
+              <p>In alto a sinistra: posizione, numero e pilota, distacco dal primo e giri completati. La tua riga è evidenziata.</p>
+              <label class="toggle-Row">
+                <input type="checkbox" id="chk-show-standings" checked />
+                <span>Mostra la classifica in pista (scorciatoia: tasto L)</span>
+              </label>
             </div>
 
             <!-- Blocco Backup / Esporta / Importa Tutta la Configurazione -->

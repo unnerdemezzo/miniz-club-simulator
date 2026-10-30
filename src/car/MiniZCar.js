@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { prepareHypercarBody, visibleMeshBox } from './hypercar-body.js';
+import { glbAxleCenters, prepareHypercarBody, visibleMeshBox } from './hypercar-body.js';
 import { trackHdLivery } from './hd-livery.js';
 import {
   REAL_SCALE,
@@ -81,6 +81,8 @@ export class MiniZCar {
     // Il piano del tappeto RCP coincide con il piano pista della sala (TRACK_Y) + spessore mattonelle (8 mm)
     this.trackSurfaceY = TRACK_Y;
     this.state.y = this.trackSurfaceY + 0.008;
+    // Passo del telaio montato: 98 mm per le Hypercar, quello della carrozzeria per le GT3 (vedi CAR_BODIES)
+    this.wheelbase = REAL_SCALE.WHEELBASE;
     this.buildDetailedChassis3D();
     this.buildLights3D();
     this.buildHeadlightBeamsAndSkids();
@@ -124,8 +126,9 @@ export class MiniZCar {
 
   // Costruisce il vero telaio Kyosho Mini-Z MR-04 EVO2 (vasca, 4 celle AAA, scheda ICS, kingpin, motore, differenziale, ruote a razze)
   buildDetailedChassis3D() {
+    while (this.chassisGroup.children.length > 0) this.chassisGroup.remove(this.chassisGroup.children[0]);
     const built = buildMR04Chassis({
-      wheelbase: REAL_SCALE.WHEELBASE,
+      wheelbase: this.wheelbase,
       wheelRadius: REAL_SCALE.WHEEL_RADIUS,
       halfTrack: 0.033
     });
@@ -163,6 +166,15 @@ export class MiniZCar {
     this.currentSetup = { ...setup };
 
     // 1. Aggiorna colori visivi di Molle e Cassa Motore sul telaio 3D
+    this.applySpringAndMotorColors();
+
+    // 2. Carica o aggiorna la Carrozzeria 3D selezionata
+    await this.loadCarBody(setup.bodyId, setup.customBodyColor, setup.showNakedChassis);
+  }
+
+  applySpringAndMotorColors() {
+    const setup = this.currentSetup;
+    if (!setup) return;
     const springSpec = FRONT_SPRINGS.find((s) => s.id === setup.frontSpringId) || FRONT_SPRINGS[1];
     for (const sm of this.springMeshes) {
       sm.material.color.set(springSpec.colorHex);
@@ -172,9 +184,6 @@ export class MiniZCar {
     if (this.motorCanMesh) {
       this.motorCanMesh.material.color.set(motorSpec.colorHex);
     }
-
-    // 2. Carica o aggiorna la Carrozzeria 3D selezionata
-    await this.loadCarBody(setup.bodyId, setup.customBodyColor, setup.showNakedChassis);
   }
 
   async loadCarBody(bodyId, customColorHex, showNakedChassis) {
@@ -187,12 +196,20 @@ export class MiniZCar {
     const bodySpec = CAR_BODIES.find((b) => b.id === bodyId) || CAR_BODIES[0];
     this.bodyId = bodySpec.id;
 
+    // Ogni carrozzeria va sul passo Mini-Z per cui è fatta: se cambia, si sposta il pod motore (telaio ricostruito)
+    const wheelbase = (bodySpec.wheelbaseMm || REAL_SCALE.WHEELBASE * 1000) / 1000;
+    if (Math.abs(wheelbase - this.wheelbase) > 1e-6) {
+      this.wheelbase = wheelbase;
+      this.buildDetailedChassis3D();
+      this.applySpringAndMotorColors();
+    }
+
     if (bodySpec.glbUrl) {
       try {
         const gltfScene = await this.fetchGlbModel(bodySpec.glbUrl);
         const clone = gltfScene.clone(true);
 
-        prepareHypercarBody(clone);
+        prepareHypercarBody(clone, { keepAllParts: bodySpec.category === 'gt3' });
         trackHdLivery(clone, bodySpec.glbUrl);
 
         // Calcola il Bounding Box reale solo sui mesh VISIBILI del modello .glb per ridimensionarlo esattamente a 17.2 cm
@@ -210,14 +227,24 @@ export class MiniZCar {
         const wrapper = new THREE.Group();
         clone.scale.setScalar(scaleFactor);
 
-        // Se il modello era orientato lungo X invece che lungo Z, lo ruota automaticamente
+        // Se il modello è orientato lungo X invece che lungo Z (es. le GT3 di Slot-Car, muso verso +X),
+        // lo ruota di -90° così il muso va verso +Z
         if (size.x > size.z * 1.15) {
-          clone.rotation.y = Math.PI / 2;
+          clone.rotation.y = -Math.PI / 2;
         }
+
+        // Carrozzerie con passo dichiarato (GT3): scala in modo che gli assi del modello cadano sugli assi del telaio
+        const axles = bodySpec.wheelbaseMm ? glbAxleCenters(clone) : null;
+        if (axles) clone.scale.multiplyScalar(wheelbase / axles.front.distanceTo(axles.rear));
 
         const scaledBox = visibleMeshBox(clone);
         const scaledCenter = new THREE.Vector3();
         scaledBox.getCenter(scaledCenter);
+        if (axles) {
+          // Centro tra i due assi (come il telaio MR-04) invece del centro del bounding box
+          const scaledAxles = glbAxleCenters(clone);
+          scaledCenter.copy(scaledAxles.front).add(scaledAxles.rear).multiplyScalar(0.5);
+        }
 
         // Centra in X e Z, e appoggia esattamente il fondo delle gomme a y = 0!
         clone.position.x -= scaledCenter.x;
@@ -631,7 +658,7 @@ export class MiniZCar {
     // utile fino al limite di aderenza occupa circa il 70% della corsa invece dei primi millimetri
     const steerProgressive = clamp(input.steerSpeedLimit ?? 0, 0, 1);
     const gripLimitAngle = Math.atan(
-      (REAL_SCALE.WHEELBASE * understeerFactor * lateralLimit) / Math.max(0.01, absV * absV)
+      (this.wheelbase * understeerFactor * lateralLimit) / Math.max(0.01, absV * absV)
     );
     const limitRatio = Math.min(1, gripLimitAngle / MAX_STEER_RAD);
     // Esponenziale stile radio y = (1-a)x + a·x³, con a scelto perché il 70% di corsa dia l'angolo limite
@@ -641,7 +668,7 @@ export class MiniZCar {
     this.state.steerAngle = -shapedSteer * MAX_STEER_RAD;
 
     const tanSteer = Math.tan(this.state.steerAngle);
-    const kinematicYaw = (absV * tanSteer) / (REAL_SCALE.WHEELBASE * understeerFactor);
+    const kinematicYaw = (absV * tanSteer) / (this.wheelbase * understeerFactor);
     const targetYawRate = gripYawLimit * Math.tanh(kinematicYaw / gripYawLimit) * directionSign;
 
     const yawDampingRate = 18.0 + 27.0 * centerBlend;
@@ -787,7 +814,7 @@ export class MiniZCar {
     // Ackermann semplificato: la ruota interna alla curva sterza più di quella esterna, così le due ruote
     // puntano allo stesso centro di curva (lf sta sul lato +X, rf sul lato -X)
     const steerShown = this.onWorkbench ? 0 : this.state.steerAngle;
-    const { left: steerLeft, right: steerRight } = ackermannAngles(steerShown);
+    const { left: steerLeft, right: steerRight } = ackermannAngles(steerShown, this.wheelbase);
 
     // Ruote del telaio MR-04 (il fusello sterza, il gruppo interno "spin" rotola)
     if (this.chassisWheelMeshes.lf) {
@@ -856,14 +883,15 @@ function smoothstep(edge0, edge1, x) {
 }
 
 // Angoli delle due ruote anteriori con Ackermann dal raggio di curva della ruota "media"
-function ackermannAngles(steerAngle) {
+function ackermannAngles(steerAngle, wheelbase) {
   if (Math.abs(steerAngle) < 1e-4) return { left: steerAngle, right: steerAngle };
-  const radius = REAL_SCALE.WHEELBASE / Math.tan(Math.abs(steerAngle));
-  const inner = Math.atan(REAL_SCALE.WHEELBASE / (radius - FRONT_TRACK / 2));
-  const outer = Math.atan(REAL_SCALE.WHEELBASE / (radius + FRONT_TRACK / 2));
+  const radius = wheelbase / Math.tan(Math.abs(steerAngle));
+  const inner = Math.atan(wheelbase / (radius - FRONT_TRACK / 2));
+  const outer = Math.atan(wheelbase / (radius + FRONT_TRACK / 2));
   const sign = Math.sign(steerAngle);
   // steerAngle > 0 gira verso +X: la ruota interna è la sinistra (lf, lato +X)
   return sign > 0
     ? { left: inner * sign, right: outer * sign }
     : { left: outer * sign, right: inner * sign };
 }
+
