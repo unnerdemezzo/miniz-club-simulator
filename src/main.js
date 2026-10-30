@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   CAR_BODIES,
+  CAR_CATEGORIES,
   CHASSIS_LIST,
   FRONT_TIRES,
   REAR_TIRES,
@@ -17,9 +18,12 @@ import { SoundAndCommentary } from './audio/SoundAndCommentary.js';
 import { ReplaySystem, REPLAY_CAMERAS } from './replay/ReplaySystem.js';
 import { ClubEnvironment } from './world/ClubEnvironment.js';
 import { MiniZCar } from './car/MiniZCar.js';
-import { ROST } from './club/config.js';
+import { DRIVERS, ROST } from './club/config.js';
+import { RaceStandings } from './ui/RaceStandings.js';
 import { keepDriverCarVisible } from './club/driver-framing.js';
 import { createQualityComposer } from './club/graphics-quality.js';
+import { setAniso } from './club/util.js';
+import { setHdLiveryQuality } from './car/hd-livery.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { APP_VERSION } from './version.js';
 
@@ -163,6 +167,8 @@ class MiniZSimulatorApp {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Come Slot-Car: filtro anisotropico al massimo che la GPU consente (fino a 16×), per pista e carrozzerie viste di sbieco
+    setAniso(Math.min(16, this.renderer.capabilities.getMaxAnisotropy()));
 
     // Controlli Orbit per la visuale libera in Sala ("Ruota in Sala")
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
@@ -178,8 +184,10 @@ class MiniZSimulatorApp {
     // della sala (scene.environment in ClubEnvironment). Niente luce emisferica né faretti di riempimento.
     // Luce principale dal soffitto: ombre della sala (tavolo, persone, arredi), inquadrata sul solo tavolo pista
     // (10,5 × 6,2 m) invece che su 17 × 14 m, così ogni pixel d'ombra copre circa 5 mm invece di 8.
+    // Stessa direzione del sole di Slot-Car (js/club.js, da 9 m quasi a picco): illumina in pieno i cofani e le livree,
+    // che dal palco sono la parte più visibile delle auto, e accorcia le ombre come nel club vero.
     this.mainCeilingLight = new THREE.DirectionalLight(0xfff2e0, 1.0);
-    this.mainCeilingLight.position.set(3.4, 3.2, 0.8);
+    this.mainCeilingLight.position.set(1.4, 9, 2.4);
     this.mainCeilingLight.target.position.set(2.4, 0, -1.9);
     this.mainCeilingLight.castShadow = true;
     this.mainCeilingLight.shadow.mapSize.set(2048, 2048);
@@ -187,8 +195,8 @@ class MiniZSimulatorApp {
     this.mainCeilingLight.shadow.camera.right = 6.4;
     this.mainCeilingLight.shadow.camera.top = 5.2;
     this.mainCeilingLight.shadow.camera.bottom = -5.2;
-    this.mainCeilingLight.shadow.camera.near = 0.5;
-    this.mainCeilingLight.shadow.camera.far = 8.5;
+    this.mainCeilingLight.shadow.camera.near = 5;
+    this.mainCeilingLight.shadow.camera.far = 15;
     this.mainCeilingLight.shadow.bias = -0.0003;
     this.mainCeilingLight.shadow.normalBias = 0.012;
     this.scene.add(this.mainCeilingLight);
@@ -203,8 +211,8 @@ class MiniZSimulatorApp {
     this.carShadowLight.shadow.camera.right = 0.7;
     this.carShadowLight.shadow.camera.top = 0.7;
     this.carShadowLight.shadow.camera.bottom = -0.7;
-    this.carShadowLight.shadow.camera.near = 0.1;
-    this.carShadowLight.shadow.camera.far = 6;
+    this.carShadowLight.shadow.camera.near = 8;
+    this.carShadowLight.shadow.camera.far = 12;
     this.carShadowLight.shadow.bias = -0.0002;
     this.carShadowLight.shadow.normalBias = 0.002;
     this.carShadowLightOffset = new THREE.Vector3().subVectors(
@@ -291,6 +299,7 @@ class MiniZSimulatorApp {
     if (this.qualityComposer) {
       this.qualityComposer.setQuality(q === 'high' ? 'high' : q === 'medium' ? 'medium' : 'low');
     }
+    setHdLiveryQuality(q === 'high');
 
     // Aggiorna tutti i riquadrini di selezione risoluzione grafica (sia in alto che nel menu)
     document.querySelectorAll('.res-mode-btn').forEach((btn) => {
@@ -319,6 +328,8 @@ class MiniZSimulatorApp {
   }
 
   initUI() {
+    this.initStandingsUI();
+
     // Versione app
     for (const id of ['hud-version-val', 'loading-version', 'setup-version']) {
       const verEl = document.getElementById(id);
@@ -598,7 +609,8 @@ class MiniZSimulatorApp {
       const el = document.getElementById(id);
       if (el) el.innerHTML = list.map((x) => `<option value="${x.id}">${x.name}</option>`).join('');
     };
-    fill('setup-sel-body', CAR_BODIES);
+    const setupBody = document.getElementById('setup-sel-body');
+    if (setupBody) setupBody.innerHTML = bodyOptionsHtml((b) => b.name);
     fill('setup-sel-chassis', CHASSIS_LIST);
     fill('setup-sel-track', TRACK_LAYOUTS);
 
@@ -764,6 +776,7 @@ class MiniZSimulatorApp {
     this.car.rootGroup.visible = true;
     this.car.resetOnTrack(this.trackData.startX, this.trackData.startZ, this.trackData.startHeading);
     this.replay.clear();
+    this.resetStandings();
     this.sound.setMotorActive(true);
     this.racePhase = 'countdown';
 
@@ -1052,7 +1065,7 @@ class MiniZSimulatorApp {
   populateBodySelect() {
     const selBody = document.getElementById('sel-body');
     if (!selBody) return;
-    selBody.innerHTML = CAR_BODIES.map((b) => `<option value="${b.id}">${b.name} (${b.scaleLabel})</option>`).join('');
+    selBody.innerHTML = bodyOptionsHtml((b) => `${b.name} (${b.scaleLabel})`);
   }
 
   initWorkbenchSelectors() {
@@ -1321,6 +1334,7 @@ class MiniZSimulatorApp {
   refreshMenuUI() {
     const state = this.profileManager.state;
     this.refreshDisplaySettingsUI?.();
+    this.applyStandingsVisibility();
     const activeProf = this.profileManager.getActiveProfile(this.bodyNamesMap, this.trackNamesMap);
     const setup = activeProf.carSetup;
     const ctrl = activeProf.controller;
@@ -1328,9 +1342,6 @@ class MiniZSimulatorApp {
     const bodyName = this.bodyNamesMap[state.currentBodyId] || state.currentBodyId;
     const trackName = this.trackNamesMap[state.currentTrackId] || state.currentTrackId;
     const profileLabel = `${bodyName} • ${trackName}`;
-
-    const topSub = document.getElementById('hud-active-profile-label');
-    if (topSub) topSub.textContent = profileLabel;
 
     const menuInd = document.getElementById('menu-profile-indicator');
     if (menuInd) menuInd.textContent = `Profilo salvato in automatico per: ${profileLabel}`;
@@ -1471,6 +1482,65 @@ class MiniZSimulatorApp {
         });
       });
     }
+  }
+
+  // Classifica di gara in tempo reale (in alto a sinistra), attivabile e disattivabile: Menu → scheda 5,
+  // pulsante ✕ / "🏁 Classifica" sull'HUD, oppure tasto L. La scelta resta salvata nel profilo.
+  initStandingsUI() {
+    this.standings = new RaceStandings(document.getElementById('standings-list'));
+    const apply = (show) => {
+      this.profileManager.state.display.showStandings = show;
+      this.profileManager.save();
+      this.applyStandingsVisibility();
+    };
+    document.getElementById('btn-standings-hide')?.addEventListener('click', () => apply(false));
+    document.getElementById('btn-standings-show')?.addEventListener('click', () => apply(true));
+    document.getElementById('chk-show-standings')?.addEventListener('change', (e) => apply(e.target.checked));
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyL' || e.repeat || this.racePhase === 'setup' || this.controller?.listeningForBinding) return;
+      if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+      apply(this.profileManager.state.display.showStandings === false);
+    });
+    this.applyStandingsVisibility();
+  }
+
+  applyStandingsVisibility() {
+    const show = this.profileManager.state.display.showStandings !== false;
+    document.body.classList.toggle('standings-hidden', !show);
+    const chk = document.getElementById('chk-show-standings');
+    if (chk) chk.checked = show;
+  }
+
+  resetStandings() {
+    const player = DRIVERS[0];
+    const body = this.bodyNamesMap[this.profileManager.state.currentBodyId] || '';
+    const playerT = this.club.trackT(this.car.state.x, this.car.state.z);
+    this.standingsPlayerT = playerT;
+    this.standings.reset(
+      [
+        { id: 'player', name: 'Tu', num: player.num, color: player.base, body, isPlayer: true, t: playerT },
+        ...this.club.aiCars.map((ai) => ({
+          id: ai.id,
+          name: ai.driver.name,
+          num: ai.driver.num,
+          color: ai.driver.base,
+          body: ai.bodyName || '',
+          t: ai.t
+        }))
+      ],
+      this.club.lapLineT
+    );
+  }
+
+  updateStandings(dt, now) {
+    if (!this.standings || this.standings.cars.size === 0) return;
+    const st = this.car.state;
+    if (!this.car.onWorkbench) this.standingsPlayerT = this.club.trackT(st.x, st.z, this.standingsPlayerT);
+    const noAi = this.club.aiLevel === 'none';
+    this.standings.update(dt, now / 1000, [
+      { id: 'player', t: this.standingsPlayerT, laps: this.lapNumber - 1 },
+      ...this.club.aiCars.map((ai) => ({ id: ai.id, t: ai.t, laps: ai.laps - (ai.raceStartLaps ?? ai.laps + 1), hidden: noAi }))
+    ]);
   }
 
   updateTimingHUD() {
@@ -1690,6 +1760,9 @@ class MiniZSimulatorApp {
     const dt = Math.min(0.05, Math.max(0.001, (now - this.lastFrameTime) / 1000));
     this.lastFrameTime = now;
 
+    // Risoluzione adattiva in qualità Alta: se in gara si scende sotto 28 FPS, si riduce un poco la risoluzione
+    this.qualityComposer.monitor(now, this.racePhase === 'racing');
+
     // 1. Calcolo FPS in tempo reale per il riquadrino in alto
     this.fpsFrames++;
     if (now - this.fpsLastTime >= 450) {
@@ -1839,6 +1912,7 @@ class MiniZSimulatorApp {
       this.currentLapSec = (now - this.lapStartTime) / 1000;
     }
     this.updateTimingHUD();
+    this.updateStandings(dt, now);
 
     // Commenti dinamici in gara (Traversi Drift o Velocità massima sul rettilineo sotto il palco)
     if (this.racePhase !== 'racing') {
@@ -1928,3 +2002,14 @@ function clamp(v, min, max) {
 window.addEventListener('DOMContentLoaded', () => {
   new MiniZSimulatorApp();
 });
+
+// Carrozzerie raggruppate per categoria (Hypercar, GT3); le carrozzerie caricate dal PC restano in cima
+function bodyOptionsHtml(labelFn) {
+  const option = (b) => `<option value="${b.id}">${labelFn(b)}</option>`;
+  const custom = CAR_BODIES.filter((b) => !b.category).map(option).join('');
+  const groups = CAR_CATEGORIES.map((cat) => {
+    const bodies = CAR_BODIES.filter((b) => b.category === cat.id);
+    return bodies.length ? `<optgroup label="${cat.name}">${bodies.map(option).join('')}</optgroup>` : '';
+  }).join('');
+  return custom + groups;
+}
