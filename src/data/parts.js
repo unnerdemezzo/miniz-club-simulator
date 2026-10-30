@@ -22,6 +22,11 @@ export const CAR_CATEGORIES = [
     id: 'hypercar',
     name: 'Hypercar (WEC / LMH / LMDh 1:27)',
     description: 'Prototipi ufficiali Le Mans Hypercar e LMDh in scala 1:27 per telaio Kyosho Mini-Z Passo 98mm LL.'
+  },
+  {
+    id: 'gt3',
+    name: 'GT3 (dalla categoria GT3 NSR di Slot-Car)',
+    description: 'Le carrozzerie GT3 della categoria NSR di Slot-Car, ognuna sul passo Mini-Z in cui Kyosho monta le GT3 (MR-04 EVO2 W-MM).'
   }
 ];
 
@@ -201,6 +206,238 @@ export const CAR_BODIES = [
     aeroBonus: 1.12,
     weightBias: 0.98,
     description: 'Prototipo 3D Genesis GMR-001 Hypercar 2026 Magma Racing con doppia linea LED parabolica.'
+  },
+  // GT3: carrozzerie della categoria "GT3 NSR" di unnerdemezzo/Slot-Car (assets/gt3), solo livello di dettaglio vicino,
+  // texture WebP 1024. Muso verso +X: MiniZCar le ruota. La scala viene dal passo (wheelbaseMm), non dalla lunghezza:
+  // gli assi del modello cadono su quelli del telaio. Kyosho monta le sue GT3 (AMG GT3, R8 LMS, 720S GT3, C8.R,
+  // 911 GT3 RS) su MR-04 W-MM; il passo 90/94/98 è scelto dal passo reale di ogni auto.
+  {
+    id: 'gt3_aston',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Aston Martin Vantage GTE',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/aston.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Aston Martin Vantage GTE: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Vantage reale: passo 2704 mm, nessuna GT3 Kyosho ufficiale: passo lungo del W-MM.'
+  },
+  {
+    id: 'gt3_vantagehor',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Aston Martin Vantage GT3 EVO · Heart of Racing',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/vantagehor.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Aston Martin Vantage GT3 EVO · Heart of Racing: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Stessa scocca Vantage (passo reale 2704 mm): W-MM 94 mm.'
+  },
+  {
+    id: 'gt3_mercedes',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Mercedes-AMG GT3',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/mercedes.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Mercedes-AMG GT3: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Kyosho la vende come Readyset MR-04 W-MM (passo reale 2630 mm).'
+  },
+  {
+    id: 'gt3_ferrari',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Ferrari 296 GT3',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/ferrari.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Ferrari 296 GT3: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Passo reale 2600 mm, proporzioni da W-MM 94 mm.'
+  },
+  {
+    id: 'gt3_ferrari296vr',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Ferrari 296 GT3 · Verstappen Racing (2025)',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/ferrari296vr.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Ferrari 296 GT3 · Verstappen Racing (2025): modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Stessa 296 GT3 (passo reale 2600 mm): W-MM 94 mm.'
+  },
+  {
+    id: 'gt3_ferrari296challenge',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Ferrari 296 Challenge (2024)',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/ferrari296challenge.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Ferrari 296 Challenge (2024): modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Monomarca su base 296 (passo reale 2600 mm): W-MM 94 mm.'
+  },
+  {
+    id: 'gt3_bmw',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'BMW M4 GT3 EVO',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-RM · passo 98 mm',
+    wheelbaseMm: 98,
+    glbUrl: '/models/gt3/bmw.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'BMW M4 GT3 EVO: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-RM · passo 98 mm. La GT3 col passo reale più lungo (2918 mm): serve il pod da 98 mm.'
+  },
+  {
+    id: 'gt3_porsche992',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Porsche 992 GT3 R (2024)',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 90 mm',
+    wheelbaseMm: 90,
+    glbUrl: '/models/gt3/porsche992.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Porsche 992 GT3 R (2024): modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 90 mm. Passo reale corto (2507 mm), come la 911 GT3 RS Kyosho su W-MM: posizione da 90 mm.'
+  },
+  {
+    id: 'gt3_porsche992rexy',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Porsche 992 GT3 R · Rexy',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 90 mm',
+    wheelbaseMm: 90,
+    glbUrl: '/models/gt3/porsche992rexy.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Porsche 992 GT3 R · Rexy: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 90 mm. Stessa 992 GT3 R (passo reale 2507 mm): W-MM 90 mm.'
+  },
+  {
+    id: 'gt3_lexusrcf',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Lexus RC F GT3 (2018)',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/lexusrcf.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Lexus RC F GT3 (2018): modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Passo reale 2730 mm: W-MM nella posizione lunga.'
+  },
+  {
+    id: 'gt3_corvettec8r',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Corvette C8R GT3 · TF Sport',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/corvettec8r.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Corvette C8R GT3 · TF Sport: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Kyosho la vende come Readyset MR-04 W-MM (C8.R, passo reale 2722 mm).'
+  },
+  {
+    id: 'gt3_mclaren720sevo',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'McLaren 720S LMGT3 EVO',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/mclaren720sevo.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'McLaren 720S LMGT3 EVO: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Kyosho la vende come Readyset MR-04 (720S GT3, passo reale 2670 mm).'
+  },
+  {
+    id: 'gt3_mclaren720s2020',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'McLaren 720S GT3 (2020)',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/mclaren720s2020.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'McLaren 720S GT3 (2020): modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Kyosho la vende come Readyset MR-04 (720S GT3, passo reale 2670 mm).'
+  },
+  {
+    id: 'gt3_mclareninception',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'McLaren 720S GT3 · Inception Racing',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/mclareninception.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'McLaren 720S GT3 · Inception Racing: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Kyosho la vende come Readyset MR-04 (720S GT3, passo reale 2670 mm).'
+  },
+  {
+    id: 'gt3_audir8evo2020',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Audi R8 LMS Evo (2020)',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/audir8evo2020.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Audi R8 LMS Evo (2020): modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Kyosho vende la R8 LMS come Readyset MR-04 W-MM (passo reale 2650 mm).'
+  },
+  {
+    id: 'gt3_audir8lms',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Audi R8 LMS',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/audir8lms.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Audi R8 LMS: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Kyosho vende la R8 LMS come Readyset MR-04 W-MM (passo reale 2650 mm).'
+  },
+  {
+    id: 'gt3_mustanggt3ford',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Ford Mustang GT3 · Ford Performance',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/mustanggt3ford.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Ford Mustang GT3 · Ford Performance: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Passo reale circa 2740 mm, nessuna Kyosho ufficiale: W-MM nella posizione lunga.'
+  },
+  {
+    id: 'gt3_mustanggt32024',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Ford Mustang GT3 (2024)',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/mustanggt32024.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Ford Mustang GT3 (2024): modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Passo reale circa 2740 mm, nessuna Kyosho ufficiale: W-MM nella posizione lunga.'
+  },
+  {
+    id: 'gt3_temerariogt3',
+    category: 'gt3',
+    categoryName: 'GT3',
+    name: 'Lamborghini Temerario GT3',
+    scaleLabel: 'GT3 • MR-04 EVO2 W-MM · passo 94 mm',
+    wheelbaseMm: 94,
+    glbUrl: '/models/gt3/temerariogt3.glb',
+    aeroBonus: 1.04,
+    weightBias: 1.0,
+    description: 'Lamborghini Temerario GT3: modello 3D e livrea della categoria GT3 NSR di Slot-Car. Telaio MR-04 EVO2 W-MM · passo 94 mm. Passo reale circa 2660 mm, come la Huracán GT3: W-MM 94 mm.'
   }
 ];
 
