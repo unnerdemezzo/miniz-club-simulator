@@ -20,7 +20,7 @@ import { buildRoomGuests } from '../club/room-guests.js';
 import { ROOM_LINK } from '../club/club-tracks.js';
 import { makeCar } from '../club/car.js';
 import { resolveCarContacts, yawFromImpulse } from '../car/CarContacts.js';
-import { prepareHypercarBody, visibleMeshBox } from '../car/hypercar-body.js';
+import { glbAxleCenters, prepareHypercarBody, visibleMeshBox } from '../car/hypercar-body.js';
 import { CAR_BODIES } from '../data/parts.js';
 
 // Ingombro in pianta per i contatti: Mini-Z 17,2 cm x 8 cm (avversari scalati 1,16 nel modello 3D)
@@ -908,19 +908,25 @@ export class ClubEnvironment {
 
     if (this.curve) this.aiCars.forEach((ai) => this.placeAiCar(ai));
 
-    // Sostituisce le auto AI procedurali con altre Hypercar del catalogo (diverse da quella del giocatore),
-    // ognuna con la sua livrea originale: niente più Ferrari 499P ricolorate.
-    const aiBodies = CAR_BODIES.filter((b) => b.glbUrl && !b.id.startsWith('custom_') && b.id !== this.playerBodyId);
+    // Sostituisce le auto AI procedurali con altre auto del catalogo della stessa categoria del giocatore
+    // (Hypercar con Hypercar, GT3 con GT3), diverse dalla sua, ognuna con la sua livrea originale.
+    const playerCategory = CAR_BODIES.find((b) => b.id === this.playerBodyId)?.category || 'hypercar';
+    const aiBodies = CAR_BODIES.filter(
+      (b) => b.glbUrl && !b.id.startsWith('custom_') && b.id !== this.playerBodyId && b.category === playerCategory
+    );
     this.aiCars.forEach((ai, idx) => {
       const spec = aiBodies[idx % aiBodies.length];
       if (!spec) return;
       this.loadAiBodyScene(spec.glbUrl).then((gltfScene) => {
         if (!this.aiCars.includes(ai)) return;
-        const clone = prepareHypercarBody(gltfScene.clone(true));
+        const clone = prepareHypercarBody(gltfScene.clone(true), { keepAllParts: spec.category === 'gt3' });
         const size = visibleMeshBox(clone).getSize(new THREE.Vector3());
         clone.scale.setScalar((spec.lengthCm || 17.2) / 100 / Math.max(size.z, size.x, 0.001));
         // Orienta il muso lungo +X locale di ai.carObj.root
         clone.rotation.y = size.x > size.z * 1.15 ? 0 : Math.PI / 2;
+        // GT3: stessa scala del giocatore, assi del modello sul passo Mini-Z della carrozzeria
+        const axles = spec.wheelbaseMm ? glbAxleCenters(clone) : null;
+        if (axles) clone.scale.multiplyScalar(spec.wheelbaseMm / 1000 / axles.front.distanceTo(axles.rear));
         const scaledBox = visibleMeshBox(clone);
         const scCenter = scaledBox.getCenter(new THREE.Vector3());
         clone.position.x -= scCenter.x;

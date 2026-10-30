@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   CAR_BODIES,
+  CAR_CATEGORIES,
   CHASSIS_LIST,
   FRONT_TIRES,
   REAR_TIRES,
@@ -595,7 +596,8 @@ class MiniZSimulatorApp {
       const el = document.getElementById(id);
       if (el) el.innerHTML = list.map((x) => `<option value="${x.id}">${x.name}</option>`).join('');
     };
-    fill('setup-sel-body', CAR_BODIES);
+    const setupBody = document.getElementById('setup-sel-body');
+    if (setupBody) setupBody.innerHTML = bodyOptionsHtml((b) => b.name);
     fill('setup-sel-chassis', CHASSIS_LIST);
     fill('setup-sel-track', TRACK_LAYOUTS);
 
@@ -930,7 +932,7 @@ class MiniZSimulatorApp {
   populateBodySelect() {
     const selBody = document.getElementById('sel-body');
     if (!selBody) return;
-    selBody.innerHTML = CAR_BODIES.map((b) => `<option value="${b.id}">${b.name} (${b.scaleLabel})</option>`).join('');
+    selBody.innerHTML = bodyOptionsHtml((b) => `${b.name} (${b.scaleLabel})`);
   }
 
   initWorkbenchSelectors() {
@@ -1803,3 +1805,14 @@ function clamp(v, min, max) {
 window.addEventListener('DOMContentLoaded', () => {
   new MiniZSimulatorApp();
 });
+
+// Carrozzerie raggruppate per categoria (Hypercar, GT3); le carrozzerie caricate dal PC restano in cima
+function bodyOptionsHtml(labelFn) {
+  const option = (b) => `<option value="${b.id}">${labelFn(b)}</option>`;
+  const custom = CAR_BODIES.filter((b) => !b.category).map(option).join('');
+  const groups = CAR_CATEGORIES.map((cat) => {
+    const bodies = CAR_BODIES.filter((b) => b.category === cat.id);
+    return bodies.length ? `<optgroup label="${cat.name}">${bodies.map(option).join('')}</optgroup>` : '';
+  }).join('');
+  return custom + groups;
+}
