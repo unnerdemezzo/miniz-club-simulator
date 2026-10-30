@@ -103,7 +103,7 @@
 
       <div class="race-setup-grid">
         <div class="setup-field">
-          <label for="setup-sel-body">🏎️ Modello • Categoria Hypercar</label>
+          <label for="setup-sel-body">🏎️ Modello • Categoria Hypercar o GT3</label>
           <select id="setup-sel-body"></select>
         </div>
         <div class="setup-field">
@@ -201,15 +201,19 @@
   <!-- CANVAS 3D DEL SIMULATORE -->
   <canvas id="sim-canvas"></canvas>
 
-  <!-- BARRA SUPERIORE CON RIQUADRINI CHIARI (VERSIONE, 3 RISOLUZIONI GRAFICHE, FPS, MENU, INSTALLA APP) -->
+  <!-- BARRA SUPERIORE: CLASSIFICA LIVE E RIQUADRINI CHIARI (VERSIONE, 3 RISOLUZIONI GRAFICHE, FPS, MENU, INSTALLA APP) -->
   <header class="top-hud-bar">
-    <div class="brand-cluster">
-      <img src="/app-icon.jpg" alt="Icona" class="hud-mini-icon" />
-      <div>
-        <div class="hud-title">MINI-Z CLUB</div>
-        <div id="hud-active-profile-label" class="hud-sub">Ferrari 499P • Circuito Club Veloce</div>
+    <!-- Classifica di gara in tempo reale (attivabile/disattivabile: ✕, Menu → scheda 5 o tasto L) -->
+    <section id="race-standings" class="race-standings" aria-label="Classifica di gara in tempo reale">
+      <div class="standings-head">
+        <span class="standings-live-dot"></span>
+        <span class="standings-title">CLASSIFICA</span>
+        <span class="standings-cols"><span>DISTACCO</span><span>G</span></span>
+        <button type="button" id="btn-standings-hide" class="standings-close" title="Nascondi la classifica (tasto L)" aria-label="Nascondi la classifica">✕</button>
       </div>
-    </div>
+      <ol id="standings-list" class="standings-list"></ol>
+    </section>
+    <button type="button" id="btn-standings-show" class="hud-action-btn standings-show-btn" title="Mostra la classifica (tasto L)">🏁 Classifica</button>
 
     <!-- Riquadrini di stato richiesti: Versione, 3 Modalità Grafiche con selezione evidente, FPS in tempo reale -->
     <div class="status-boxes-cluster">
@@ -698,6 +702,76 @@
                   </button>
                 </div>
               </div>
+
+              <!-- Volante + pedaliera e radiocomando RC via USB (configurazione unica per tutte le auto e piste) -->
+              <div class="hw-box" id="hw-controls-box">
+                <h4>🏁 Volante, Pedaliera e Radiocomando RC (USB)</h4>
+                <div class="setup-field">
+                  <label for="sel-control-mode">Con cosa guidi?</label>
+                  <select id="sel-control-mode">
+                    <option value="pad">🎮 Joypad / Tastiera</option>
+                    <option value="wheel">🏁 Volante + Pedaliera</option>
+                    <option value="rc">📻 Radiocomando RC collegato via USB</option>
+                  </select>
+                </div>
+                <p id="hw-detected" class="hw-note"></p>
+
+                <div id="hw-wheel-fields" class="hw-fields">
+                  <div class="bind-item">
+                    <span>Sterzo volante<br /><small id="lbl-wheel-steer">non calibrato</small></span>
+                    <button type="button" class="hw-cal-btn" data-cal="wheelSteer">Calibra: gira il volante</button>
+                  </div>
+                  <div class="setup-field">
+                    <label for="sel-wheel-rotation">Gradi di rotazione impostati nel driver del volante</label>
+                    <select id="sel-wheel-rotation">
+                      <option value="180">180°</option>
+                      <option value="270">270°</option>
+                      <option value="360">360°</option>
+                      <option value="540">540°</option>
+                      <option value="720">720°</option>
+                      <option value="900">900° (Logitech, Thrustmaster)</option>
+                      <option value="1080">1080° (Fanatec, Moza)</option>
+                    </select>
+                  </div>
+                  <div class="slider-row">
+                    <div class="slider-label-top">
+                      <span>Volante per sterzata piena (da finecorsa a finecorsa)</span>
+                      <strong id="val-wheel-lock">180°</strong>
+                    </div>
+                    <input type="range" id="rng-wheel-lock" min="60" max="1080" step="10" />
+                    <small>180° = giri di 90° per lato e le ruote arrivano all'angolo massimo (26°). Oltre non sterza di più.</small>
+                  </div>
+                  <div class="bind-item">
+                    <span>Pedale gas<br /><small id="lbl-pedal-throttle">non calibrato</small></span>
+                    <button type="button" class="hw-cal-btn" data-cal="pedalThrottle">Calibra: premi a fondo e rilascia</button>
+                  </div>
+                  <div class="bind-item">
+                    <span>Pedale freno / retro<br /><small id="lbl-pedal-brake">non calibrato</small></span>
+                    <button type="button" class="hw-cal-btn" data-cal="pedalBrake">Calibra: premi a fondo e rilascia</button>
+                  </div>
+                  <div class="slider-row">
+                    <div class="slider-label-top">
+                      <span>Zona Morta Pedali</span>
+                      <strong id="val-pedal-dz">3%</strong>
+                    </div>
+                    <input type="range" id="rng-pedal-dz" min="0" max="15" step="1" />
+                    <small>Inizio corsa dei pedali che non fa niente, per non accelerare appoggiando il piede.</small>
+                  </div>
+                  <small>La pedaliera può essere anche una USB separata dal volante. Il verso dei pedali (da -1 a 1 o da 1 a -1) lo trova la calibrazione. Freno load cell (es. Cammus LC100, Fanatec, Heusinkveld): in calibrazione premi con la forza che vuoi per la frenata massima. Il browser non gestisce il force feedback: per sentire il ritorno al centro imposta una molla nel software del volante (Cammus, Fanatec, Moza...). La frizione non serve: la Mini-Z non ha cambio.</small>
+                </div>
+
+                <div id="hw-rc-fields" class="hw-fields">
+                  <div class="bind-item">
+                    <span>Volantino<br /><small id="lbl-rc-steer">non calibrato</small></span>
+                    <button type="button" class="hw-cal-btn" data-cal="rcSteer">Calibra</button>
+                  </div>
+                  <div class="bind-item">
+                    <span>Grilletto gas / freno<br /><small id="lbl-rc-throttle">non calibrato</small></span>
+                    <button type="button" class="hw-cal-btn" data-cal="rcThrottle">Calibra</button>
+                  </div>
+                  <small>Sulla radio attiva la modalità USB Joystick (EdgeTX/OpenTX: "USB Joystick (HID)"), oppure usa un dongle da simulatore (es. Spektrum WS3000). Non importa su quale canale arrivano sterzo e gas: la calibrazione trova da sola l'asse che muovi, il centro, i fine corsa e il verso. Calibrazione: volantino prima tutto a DESTRA, poi tutto a sinistra, poi lascialo. Grilletto: prima tira a fondo (gas), poi spingi a fondo (freno), poi lascialo. Curve, dual rate e trim restano quelli a sinistra (preset Radiocomando).</small>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -775,6 +849,16 @@
                 <input type="range" id="rng-fov-zoom" min="60" max="180" step="5" value="100" />
               </div>
               <div id="display-fov-readout" class="status-feedback">Campo visivo verticale: 50°</div>
+            </div>
+
+            <!-- Blocco Classifica di gara in tempo reale (HUD in alto a sinistra) -->
+            <div class="sys-card">
+              <h4>🏁 Classifica di Gara in Tempo Reale</h4>
+              <p>In alto a sinistra: posizione, numero e pilota, distacco dal primo e giri completati. La tua riga è evidenziata.</p>
+              <label class="toggle-Row">
+                <input type="checkbox" id="chk-show-standings" checked />
+                <span>Mostra la classifica in pista (scorciatoia: tasto L)</span>
+              </label>
             </div>
 
             <!-- Blocco Backup / Esporta / Importa Tutta la Configurazione -->

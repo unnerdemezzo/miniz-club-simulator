@@ -41,8 +41,26 @@ export const DEFAULT_CONTROLLER_PROFILE = {
 // Preset dello sterzo: "Joypad" per uno stick con poca corsa, "Radiocomando" come una radio a pistola di serie
 export const CONTROLLER_PRESETS = {
   joypad: { steeringExp: -45, steeringDualRate: 100, steerSpeedLimit: 65, servoSpeed: 85, deadzone: 5 },
-  radio: { steeringExp: -10, steeringDualRate: 100, steerSpeedLimit: 0, servoSpeed: 100, deadzone: 2 }
+  radio: { steeringExp: -10, steeringDualRate: 100, steerSpeedLimit: 0, servoSpeed: 100, deadzone: 2 },
+  // Volante: ha tanta corsa e un centro preciso, quindi curva lineare e quasi niente zona morta
+  wheel: { steeringExp: 0, steeringDualRate: 100, steerSpeedLimit: 0, servoSpeed: 100, deadzone: 1 }
 };
+
+// Volante, pedaliera e radiocomando USB sono hardware, non assetto: la configurazione è unica per tutte le auto e le piste
+export const DEFAULT_WHEEL_CONFIG = {
+  mode: 'pad',       // 'pad' (joypad/tastiera) | 'wheel' (volante + pedaliera) | 'rc' (radiocomando RC via USB)
+  rotation: 900,     // gradi di rotazione totali impostati nel driver del volante
+  lockDeg: 180,      // gradi di volante (da finecorsa a finecorsa) per la sterzata piena delle ruote
+  steer: null,       // { device, axis } asse sterzo del volante
+  pedalThrottle: null, // { device, axis, rest, full } pedale gas calibrato
+  pedalBrake: null,    // { device, axis, rest, full } pedale freno calibrato
+  pedalDeadzone: 3,  // 0% a 15%, zona morta a inizio corsa dei pedali
+  rcSteer: null,     // { device, axis, center, min, max, positiveSign } volantino del radiocomando
+  rcThrottle: null   // { device, axis, center, min, max, positiveSign } grilletto (gas da un lato, freno dall'altro)
+};
+
+// Curve consigliate per ogni tipo di comando
+export const MODE_PRESET = { wheel: 'wheel', rc: 'radio' };
 
 // Fino alla v1.6.1 sterzo, gas e freno avevano esponenziale e dual rate nascosti sopra i valori del menu,
 // e la v1.6.3 non aveva ancora il preset Joypad: i vecchi valori tornano ai nuovi default
@@ -93,12 +111,14 @@ export class ProfileManager {
       },
       // Schermo di chi gioca: con la prospettiva reale il campo visivo della vista dal palco è quello
       // che lo schermo occupa davvero davanti agli occhi (misura, formato e distanza)
+      wheel: { ...DEFAULT_WHEEL_CONFIG },
       display: {
         realPerspective: true,
         diagonalInch: 27,
         aspect: 'auto', // 'auto' | '16:9' | '16:10' | '21:9' | '32:9' | '4:3' | '3:2'
         distanceCm: 65,
-        zoom: 1.0 // >1 allarga il campo visivo (vedi più pista), <1 lo stringe
+        zoom: 1.0, // >1 allarga il campo visivo (vedi più pista), <1 lo stringe
+        showStandings: true // classifica di gara in tempo reale in alto a sinistra
       },
       // Profili automatici indicizzati per chiave `${bodyId}__${trackId}`
       autoProfiles: {
@@ -152,6 +172,7 @@ export class ProfileManager {
         appVersion: APP_VERSION,
         audio: { ...def.audio, ...(parsed.audio || {}) },
         display: { ...def.display, ...(parsed.display || {}) },
+        wheel: { ...def.wheel, ...(parsed.wheel || {}) },
         autoProfiles: { ...def.autoProfiles, ...(parsed.autoProfiles || {}) },
         lapRecords: { ...def.lapRecords, ...(parsed.lapRecords || {}) }
       };
@@ -196,7 +217,11 @@ export class ProfileManager {
         trackId,
         updatedAt: new Date().toISOString(),
         carSetup: defaultSetup,
-        controller: JSON.parse(JSON.stringify(DEFAULT_CONTROLLER_PROFILE))
+        controller: {
+          ...JSON.parse(JSON.stringify(DEFAULT_CONTROLLER_PROFILE)),
+          // Chi guida col volante o col radiocomando parte con il suo preset anche su una nuova auto o pista
+          ...(CONTROLLER_PRESETS[MODE_PRESET[this.state.wheel?.mode]] || {})
+        }
       };
       this.save();
     }
@@ -227,6 +252,17 @@ export class ProfileManager {
     profile.updatedAt = new Date().toISOString();
     this.save();
     return profile;
+  }
+
+  getWheelConfig() {
+    if (!this.state.wheel) this.state.wheel = { ...DEFAULT_WHEEL_CONFIG };
+    return this.state.wheel;
+  }
+
+  updateWheelConfig(partial) {
+    this.state.wheel = { ...this.getWheelConfig(), ...partial };
+    this.save();
+    return this.state.wheel;
   }
 
   // Copia un profilo salvato (controller, assetto o entrambi) sull'auto e pista attualmente selezionate
@@ -302,6 +338,7 @@ export class ProfileManager {
       ...importedState,
       audio: { ...def.audio, ...(importedState.audio || {}) },
       display: { ...def.display, ...(importedState.display || {}) },
+      wheel: { ...def.wheel, ...(importedState.wheel || {}) },
       autoProfiles: { ...def.autoProfiles, ...(importedState.autoProfiles || {}) },
       lapRecords: { ...def.lapRecords, ...(importedState.lapRecords || {}) }
     };
