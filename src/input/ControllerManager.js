@@ -39,9 +39,10 @@ export class ControllerManager {
     this.initListeners();
   }
 
-  // Volanti e pedaliere più diffusi (Logitech, Thrustmaster, Fanatec, Moza, Simucube, Simagic, PXN, Heusinkveld...)
+  // Volanti e pedaliere più diffusi (Logitech, Thrustmaster, Fanatec, Moza, Simucube, Simagic, PXN, Heusinkveld...).
+  // Cammus (C5, C12, LC100) a volte compare solo col codice produttore 3416.
   isLikelyWheel(id = '') {
-    return /wheel|volante|pedal|driving\s*force|dfgt|\bG(25|27|29|920|923)\b|G\s*PRO|thrustmaster|\bT(150|248|300|500|818|GT)|TMX|TS-PC|TS-XW|fanatec|CSL|clubsport|podium|gran\s*turismo\s*dd|moza|simucube|simagic|cammus|asetek|pxn|heusinkveld/i.test(id);
+    return /wheel|volante|pedal|driving\s*force|dfgt|\bG(25|27|29|920|923)\b|G\s*PRO|thrustmaster|\bT(150|248|300|500|818|GT)|TMX|TS-PC|TS-XW|fanatec|CSL|clubsport|podium|gran\s*turismo\s*dd|moza|simucube|simagic|cammus|asetek|pxn|heusinkveld|vendor:\s*3416\b/i.test(id);
   }
 
   // Radiocomandi collegati via USB come joystick: radio EdgeTX/OpenTX, dongle da simulatore (Spektrum WS2000/WS3000...)
