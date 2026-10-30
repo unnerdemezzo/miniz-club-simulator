@@ -9,14 +9,16 @@ const HIDDEN_NODE = /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|STEER_HR|DAMAGE|gl
 const HIDDEN_MATERIAL = /Rim_Blur|GLOW|TRANSPARENTE|kers_|963_|sw_|shift_lights|dials_alpha|logo_cos/i;
 const SHADOW_MATERIAL = /^Body$|^main$|Tyre|RIMS|paint|carpaint|geomainbody|mat_44|exterior_mm_ext/i;
 
-export function prepareHypercarBody(root) {
+// Le GT3 arrivano da Slot-Car già pulite (solo il livello di dettaglio vicino, niente helper): si mostra tutto,
+// perché i filtri qui sopra, pensati per le Hypercar, nasconderebbero adesivi e vetri (es. "stickers_", "TRANSPARENTE").
+export function prepareHypercarBody(root, { keepAllParts = false } = {}) {
   root.traverse((node) => {
     const matName = node.material?.name || '';
-    if (HIDDEN_NODE.test(node.name || '') || HIDDEN_MATERIAL.test(matName)) {
+    if (!keepAllParts && (HIDDEN_NODE.test(node.name || '') || HIDDEN_MATERIAL.test(matName))) {
       node.visible = false;
     }
     if (!node.isMesh || !node.visible) return;
-    node.castShadow = SHADOW_MATERIAL.test(matName);
+    node.castShadow = keepAllParts || SHADOW_MATERIAL.test(matName);
     node.receiveShadow = true;
     // Clonati perché la scena del .glb è in cache e condivisa tra giocatore e avversari
     node.material = Array.isArray(node.material)
@@ -42,4 +44,29 @@ export function visibleMeshBox(root) {
     box.expandByObject(node);
   });
   return box;
+}
+
+// Centri degli assi anteriore e posteriore (media delle due ruote) dai nodi ruota del modello .glb, in coordinate mondo
+const GLB_WHEEL_NAMES = {
+  lf: /^(WHEEL_LF(_\d+)?|WheelFL)$/i,
+  rf: /^(WHEEL_RF(_\d+)?|WheelFR)$/i,
+  lr: /^(WHEEL_LR(_\d+)?|WheelRL)$/i,
+  rr: /^(WHEEL_RR(_\d+)?|WheelRR)$/i
+};
+export function glbAxleCenters(root) {
+  root.updateMatrixWorld(true);
+  const centers = {};
+  root.traverse((node) => {
+    for (const [key, re] of Object.entries(GLB_WHEEL_NAMES)) {
+      if (!centers[key] && re.test(node.name || '')) {
+        const box = new THREE.Box3().setFromObject(node);
+        if (!box.isEmpty()) centers[key] = box.getCenter(new THREE.Vector3());
+      }
+    }
+  });
+  if (!centers.lf || !centers.rf || !centers.lr || !centers.rr) return null;
+  return {
+    front: centers.lf.clone().add(centers.rf).multiplyScalar(0.5),
+    rear: centers.lr.clone().add(centers.rr).multiplyScalar(0.5)
+  };
 }
