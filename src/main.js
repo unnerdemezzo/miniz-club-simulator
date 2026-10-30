@@ -26,10 +26,19 @@ import { setAniso } from './club/util.js';
 import { setHdLiveryQuality } from './car/hd-livery.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { APP_VERSION } from './version.js';
+import { startWithAccess } from './access/access-gate.js';
+import { DEMO, protectDemoStorage, applyDemoState, installDemoUi } from './access/demo-mode.js';
 
 class MiniZSimulatorApp {
-  constructor() {
+  constructor({ demo = false } = {}) {
+    // Demo senza codice: una pista, un'auto, gara a tempo di 3 minuti, nessun salvataggio (src/access/demo-mode.js)
+    this.demo = demo;
+    if (demo) protectDemoStorage();
     this.profileManager = new ProfileManager();
+    if (demo) {
+      applyDemoState(this.profileManager.state);
+      installDemoUi();
+    }
     this.controller = new ControllerManager(this.profileManager);
     this.replay = new ReplaySystem();
 
@@ -597,6 +606,7 @@ class MiniZSimulatorApp {
   getRaceSettings() {
     const st = this.profileManager.state;
     const rs = st.raceSettings || {};
+    if (this.demo) return { mode: DEMO.mode, laps: 10, minutes: DEMO.minutes };
     return {
       mode: ['practice', 'laps', 'time'].includes(rs.mode) ? rs.mode : 'time',
       laps: Number(rs.laps) || 10,
@@ -641,6 +651,7 @@ class MiniZSimulatorApp {
   }
 
   setSetupMode(mode) {
+    if (this.demo) mode = DEMO.mode;
     document.querySelectorAll('.setup-mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.raceMode === mode));
     document.getElementById('setup-laps-wrap')?.classList.toggle('hidden', mode !== 'laps');
     document.getElementById('setup-minutes-wrap')?.classList.toggle('hidden', mode !== 'time');
@@ -715,10 +726,11 @@ class MiniZSimulatorApp {
         laps: Number(val('setup-sel-laps')) || 10,
         minutes: Number(val('setup-sel-minutes')) || 5
       };
+      if (this.demo) applyDemoState(st);
       this.profileManager.save();
 
       const prof = this.profileManager.updateActiveCarSetup(
-        { chassisId: val('setup-sel-chassis') },
+        { chassisId: this.demo ? CHASSIS_LIST[0]?.id : val('setup-sel-chassis') },
         this.bodyNamesMap,
         this.trackNamesMap
       );
@@ -1999,8 +2011,9 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+// Il gioco parte solo dopo la verifica dell'accesso (codice personale o demo), come in Slot Car
 window.addEventListener('DOMContentLoaded', () => {
-  new MiniZSimulatorApp();
+  startWithAccess(({ demo }) => new MiniZSimulatorApp({ demo }));
 });
 
 // Carrozzerie raggruppate per categoria (Hypercar, GT3); le carrozzerie caricate dal PC restano in cima

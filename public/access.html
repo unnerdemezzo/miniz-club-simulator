@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090d16">
+  <meta name="robots" content="noindex">
+  <title>Accesso · MINI-Z CLUB SIMULATOR</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/access-app/access.css">
+  <script src="/access-app/access-ui.js" type="module"></script>
+</head>
+<body>
+  <main>
+    <nav class="access-navigation" aria-label="Navigazione accesso"><a id="access-switch" href="/admin">Accesso proprietario</a></nav>
+    <header><span class="eyebrow">KYOSHO MINI-Z • SCALA 1:27</span><h1>MINI-Z <em>CLUB</em></h1><p id="intro">La pista del club ti aspetta.</p></header>
+    <p id="message" role="status" aria-live="polite"></p>
+    <p id="public-game" hidden><a class="back" href="/">Apri il gioco</a></p>
+    <section id="player" hidden>
+      <h2>Il tuo accesso personale</h2>
+      <form id="player-form">
+        <label for="code">Codice ricevuto dal proprietario</label>
+        <input id="code" name="code" placeholder="MZ-…" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="200" required>
+        <p>Il codice abilita un solo browser. Attivalo sul dispositivo in cui vuoi giocare. Cambiando browser o cancellandone i cookie dovrai richiedere un nuovo codice.</p>
+        <button class="primary" type="submit">Entra nel club</button>
+      </form>
+      <p class="fine">L’accesso viene ricordato in questo browser. Gare, preferenze e salvataggi restano sul dispositivo.</p>
+      <div id="demo-offer" class="demo-offer">
+        <h3>Non hai ancora un codice?</h3>
+        <p>Prova la demo: Circuito Club Veloce con la Ferrari 499P, gara a tempo di 3 minuti contro gli avversari. Il resto del gioco (altre piste e auto, Banco Box, gare a giri e prove libere) si vede ma si sblocca con il codice. In demo non viene salvato nulla.</p>
+        <p id="demo-active" class="fine" hidden>Stai già provando la demo: inserisci qui sopra il codice per sbloccare tutto.</p>
+        <button id="demo-button" class="secondary" type="button">Prova la demo</button>
+      </div>
+    </section>
+    <section id="admin-login" hidden>
+      <h2>Accesso proprietario</h2>
+      <form id="admin-form">
+        <label for="password">Password amministrativa</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" maxlength="512" required>
+        <button class="primary" type="submit">Accedi alla gestione</button>
+      </form>
+      <a class="back" href="/access">Torna all’accesso al gioco</a>
+    </section>
+    <section id="dashboard" hidden>
+      <div class="dashboard-heading"><h2>Gestione accessi</h2><button id="logout" class="secondary" type="button">Esci</button></div>
+      <a class="back" href="/">Apri il gioco</a>
+      <p id="gate-mode" class="fine" hidden>Preparazione: la richiesta del codice all’ingresso non è ancora attiva.</p>
+      <label for="game-link">Link del gioco</label>
+      <div class="create-row"><input id="game-link" readonly aria-label="Link del gioco da condividere"><button id="copy-link" class="secondary" type="button">Copia link</button></div>
+      <form id="gift-form">
+        <label for="label">Destinatario <span>(facoltativo)</span></label>
+        <div class="create-row"><input id="label" maxlength="80" placeholder="Es. Marco" autocomplete="off"><button class="primary" type="submit">Genera codice</button></div>
+      </form>
+      <section id="new-gift" class="gift-result" hidden>
+        <h3>Codice personale</h3><p>Copialo prima di chiudere la pagina: il codice completo viene mostrato una sola volta.</p>
+        <output id="gift-code"></output>
+        <div class="share-actions"><button id="copy-invite" class="primary" type="button">Copia invito</button><button id="copy-code" class="secondary" type="button">Copia codice</button></div>
+        <p class="fine">L’invito contiene il link e il codice, pronti da incollare nel tuo messaggio.</p>
+      </section>
+      <div id="copy-fallback" hidden><label for="copy-text">Testo da copiare</label><textarea id="copy-text" readonly rows="7"></textarea></div>
+      <div class="dashboard-heading"><h3>Accessi distribuiti</h3><button id="refresh" class="secondary" type="button">Aggiorna</button></div>
+      <p class="fine">Una revoca blocca l’accesso anche nel gioco già aperto, al controllo successivo. Per riabilitare una persona genera un nuovo codice.</p>
+      <ul id="grants" class="grants"></ul>
+      <div class="pagination"><button id="previous" class="secondary" type="button">Precedenti</button><span id="page-label"></span><button id="next" class="secondary" type="button">Successivi</button></div>
+    </section>
+    <details class="install-help">
+      <summary>Aggiungi il gioco alla Home</summary>
+      <p><b>iPhone:</b> apri il link in Safari, tocca Condividi e poi Aggiungi alla schermata Home.</p>
+      <p><b>Android:</b> apri il link in Chrome, apri il menu e scegli Installa app o Aggiungi a schermata Home.</p>
+      <p>Se usi l’icona sulla Home, aggiungila prima e attiva il codice dentro l’app. Browser e app installata possono conservare cookie e salvataggi separati.</p>
+    </details>
+    <footer>MINI-Z CLUB SIMULATOR</footer>
+  </main>
+</body>
+</html>
+

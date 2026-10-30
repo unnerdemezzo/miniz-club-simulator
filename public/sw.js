@@ -36,6 +36,8 @@ self.addEventListener('fetch', (event) => {
   const sameSite = url.origin === self.location.origin;
   const isFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (!sameSite && !isFont) return;
+  // Verifica accesso e pagine di accesso/gestione codici: sempre dalla rete, mai dalla copia salvata
+  if (sameSite && (url.pathname.startsWith('/api/') || /^\/(access|admin)(\.html|\/)?$/.test(url.pathname))) return;
   event.respondWith(
     fetch(req)
       .then((res) => {
