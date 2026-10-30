@@ -1362,8 +1362,8 @@ body, html {
 }
 
 .hw-cal-btn.listening {
-  background: #e11d48;
-  border-color: #fda4af;
+  background: var(--accent);
+  border-color: var(--accent-line);
   animation: pulseMic 0.7s infinite alternate;
 }
 
