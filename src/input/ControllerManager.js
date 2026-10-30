@@ -30,7 +30,171 @@ export class ControllerManager {
     this._prevCameraBtn = false;
     this._prevReplayBtn = false;
 
+    // Calibrazione in corso di volante o pedale (vedi startWheelCalibration)
+    this.calibration = null;
+    // Pedali già visti a riposo in questa sessione: finché non lo sono vengono ignorati
+    // (alcuni browser riportano 0 invece di -1 finché il pedale non viene premuto la prima volta)
+    this._pedalLive = new Set();
+
     this.initListeners();
+  }
+
+  // Volanti e pedaliere più diffusi (Logitech, Thrustmaster, Fanatec, Moza, Simucube, Simagic, PXN, Heusinkveld...)
+  isLikelyWheel(id = '') {
+    return /wheel|volante|pedal|driving\s*force|dfgt|\bG(25|27|29|920|923)\b|G\s*PRO|thrustmaster|\bT(150|248|300|500|818|GT)|TMX|TS-PC|TS-XW|fanatec|CSL|clubsport|podium|gran\s*turismo\s*dd|moza|simucube|simagic|cammus|asetek|pxn|heusinkveld/i.test(id);
+  }
+
+  // Radiocomandi collegati via USB come joystick: radio EdgeTX/OpenTX, dongle da simulatore (Spektrum WS2000/WS3000...)
+  isLikelyRcRadio(id = '') {
+    return /spektrum|\bWS\s*[123]000|edgetx|opentx|radiomaster|frsky|taranis|flysky|jumper|interlink|realflight|sim(ulator)?\s*dongle|rc\s*joystick|futaba|sanwa/i.test(id);
+  }
+
+  getWheelConfig() {
+    return this.profileManager.getWheelConfig ? this.profileManager.getWheelConfig() : null;
+  }
+
+  getAllPads() {
+    return navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+  }
+
+  // Le periferiche si ritrovano per nome (l'indice cambia scollegando e ricollegando)
+  findPad(pads, device) {
+    if (!device) return null;
+    return pads.find((p) => p.id === device) || null;
+  }
+
+  // Calibrazione guidata:
+  // - 'wheelSteer': gira il volante, viene preso l'asse che si muove;
+  // - 'rcSteer' / 'rcThrottle': volantino o grilletto del radiocomando prima a fondo da un lato (destra / gas),
+  //   poi a fondo dall'altro (sinistra / freno), poi lasciato al centro: centro, fine corsa e verso vengono salvati;
+  // - 'pedalThrottle' / 'pedalBrake': premi il pedale a fondo e rilascialo, vengono salvati riposo e fine corsa
+  //   (così funzionano pedali che vanno da -1 a 1, da 1 a -1, da 0 a 1 o che non arrivano a fine scala).
+  startWheelCalibration(kind, onComplete) {
+    this.listeningForBinding = null;
+    const baselines = new Map(this.getAllPads().map((p) => [p.index, [...p.axes]]));
+    this.calibration = { kind, onComplete, baselines, phase: 'wait', elapsed: 0 };
+  }
+
+  cancelWheelCalibration() {
+    this.calibration = null;
+  }
+
+  updateCalibration(pads, dt) {
+    const cal = this.calibration;
+    if (!cal) return;
+    cal.elapsed += dt;
+    const finish = (result) => {
+      this.calibration = null;
+      if (cal.onComplete) cal.onComplete(cal.kind, result);
+    };
+    if (cal.elapsed > 12) {
+      finish(null);
+      return;
+    }
+
+    if (cal.phase === 'wait') {
+      for (const p of pads) {
+        const base = cal.baselines.get(p.index);
+        if (!base) {
+          cal.baselines.set(p.index, [...p.axes]);
+          continue;
+        }
+        for (let i = 0; i < p.axes.length; i++) {
+          if (Math.abs(p.axes[i] - (base[i] ?? 0)) <= 0.3) continue;
+          if (cal.kind === 'wheelSteer') {
+            finish({ device: p.id, axis: i });
+            return;
+          }
+          cal.phase = cal.kind.startsWith('rc') ? 'sweep' : 'press';
+          cal.device = p.id;
+          cal.padIndex = p.index;
+          cal.axis = i;
+          cal.base = base[i] ?? 0;
+          cal.extreme = p.axes[i];
+          cal.min = Math.min(cal.base, p.axes[i]);
+          cal.max = Math.max(cal.base, p.axes[i]);
+          cal.positiveSign = Math.sign(p.axes[i] - cal.base);
+          cal.stableFor = 0;
+          cal.last = p.axes[i];
+          return;
+        }
+      }
+      return;
+    }
+
+    const pad = pads.find((p) => p.index === cal.padIndex);
+    const cur = pad?.axes[cal.axis];
+    if (cur === undefined) {
+      finish(null);
+      return;
+    }
+
+    if (cal.phase === 'sweep') {
+      cal.min = Math.min(cal.min, cur);
+      cal.max = Math.max(cal.max, cur);
+      if (Math.abs(cur - cal.last) < 0.01) cal.stableFor += dt;
+      else cal.stableFor = 0;
+      cal.last = cur;
+      // Finito quando entrambi i lati sono stati portati a fondo e la levetta è ferma vicino al centro di partenza
+      const bothSides = cal.max - cal.base > 0.3 && cal.base - cal.min > 0.3;
+      if (bothSides && Math.abs(cur - cal.base) < 0.15 && cal.stableFor >= 0.3) {
+        finish({ device: cal.device, axis: cal.axis, center: cur, min: cal.min, max: cal.max, positiveSign: cal.positiveSign });
+      }
+      return;
+    }
+
+    if (cal.phase === 'press') {
+      if (Math.abs(cur - cal.base) > Math.abs(cal.extreme - cal.base)) cal.extreme = cur;
+      // Rilasciato quando è tornato indietro di oltre il 60% della corsa
+      if (Math.abs(cur - cal.extreme) > 0.6 * Math.abs(cal.extreme - cal.base)) {
+        cal.phase = 'settle';
+        cal.last = cur;
+        cal.stableFor = 0;
+      }
+      return;
+    }
+
+    // 'settle': il riposo vero è dove il pedale si ferma dopo il rilascio
+    if (Math.abs(cur - cal.last) < 0.01) cal.stableFor += dt;
+    else cal.stableFor = 0;
+    cal.last = cur;
+    if (cal.stableFor >= 0.25) {
+      const span = cal.extreme - cur;
+      if (Math.abs(span) < 0.3) {
+        finish(null);
+        return;
+      }
+      this._pedalLive.add(`${cal.device}#${cal.axis}`);
+      finish({ device: cal.device, axis: cal.axis, rest: cur, full: cal.extreme });
+    }
+  }
+
+  // Asse centrato calibrato del radiocomando: -1..1, positivo verso il lato portato a fondo per primo (destra / gas)
+  readCenteredAxis(pads, cal) {
+    if (!cal) return 0;
+    const p = this.findPad(pads, cal.device);
+    const cur = p?.axes[cal.axis];
+    if (cur === undefined) return 0;
+    const d = cur - cal.center;
+    const v = d >= 0 ? d / Math.max(0.05, cal.max - cal.center) : d / Math.max(0.05, cal.center - cal.min);
+    return Math.max(-1, Math.min(1, v)) * (cal.positiveSign || 1);
+  }
+
+  // Pedale calibrato: 0 a riposo, 1 a fine corsa
+  readPedal(pads, pedal) {
+    if (!pedal) return 0;
+    const p = this.findPad(pads, pedal.device);
+    const cur = p?.axes[pedal.axis];
+    if (cur === undefined) return 0;
+    const span = pedal.full - pedal.rest;
+    if (Math.abs(span) < 0.2) return 0;
+    const v = (cur - pedal.rest) / span;
+    const key = `${pedal.device}#${pedal.axis}`;
+    if (!this._pedalLive.has(key)) {
+      if (v > 0.1) return 0;
+      this._pedalLive.add(key);
+    }
+    return Math.max(0, Math.min(1, v));
   }
 
   isLikelyButtonBox(id = '') {
@@ -38,11 +202,13 @@ export class ControllerManager {
   }
 
   getConnectedDevices() {
-    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+    const pads = this.getAllPads();
     return pads.map((p) => ({
       index: p.index,
       id: p.id,
       isButtonBox: this.isLikelyButtonBox(p.id),
+      isWheel: this.isLikelyWheel(p.id),
+      isRcRadio: this.isLikelyRcRadio(p.id),
       mapping: p.mapping
     }));
   }
@@ -97,6 +263,18 @@ export class ControllerManager {
     }
 
     // Modalità 'auto':
+    // 0. Con volante o radiocomando USB i tasti (commissario, visuale, replay) si leggono da lì
+    const wheel = this.getWheelConfig();
+    const steerDevice = wheel?.mode === 'wheel' ? wheel.steer?.device : wheel?.mode === 'rc' ? wheel.rcSteer?.device : null;
+    if (steerDevice) {
+      const wheelPad = this.findPad(pads, steerDevice);
+      if (wheelPad) {
+        this.connectedGamepadName = wheelPad.id;
+        this.activeGamepadIndex = wheelPad.index;
+        return wheelPad;
+      }
+    }
+
     // 1. Esclude le Button Box se ci sono altri controller o se la Button Box non è stata toccata
     const nonButtonBoxPads = pads.filter((p) => !this.isLikelyButtonBox(p.id));
     const candidates = nonButtonBoxPads.length > 0 ? nonButtonBoxPads : [];
@@ -196,6 +374,16 @@ export class ControllerManager {
   update(dt) {
     const ctrl = this.profileManager.getActiveProfile().controller;
     const b = ctrl.Bindings;
+    // "Solo tastiera" ignora anche volante e pedaliera
+    const wheel = this.preferredDevice === 'keyboard' ? null : this.getWheelConfig();
+    const allPads = this.getAllPads();
+    this.updateCalibration(allPads, dt);
+    // I dispositivi di volante e pedali non vanno letti con la logica "indovina il grilletto" del joypad
+    const wheelDevices = new Set();
+    const mode = wheel?.mode ?? 'pad';
+    const hwBindings =
+      mode === 'wheel' ? [wheel.steer, wheel.pedalThrottle, wheel.pedalBrake] : mode === 'rc' ? [wheel.rcSteer, wheel.rcThrottle] : [];
+    for (const hw of hwBindings) if (hw) wheelDevices.add(hw.device);
 
     // 1. Lettura Tastiera (Frecce + WASD)
     let keySteer = 0;
@@ -358,7 +546,9 @@ export class ControllerManager {
       };
 
       // Acceleratore e Freno proporzionali 0% -> 100%
-      if (b.padThrottleAxis >= 0 && pad.axes[b.padThrottleAxis] !== undefined) {
+      if (wheelDevices.has(pad.id)) {
+        // Volante o pedaliera: gas e freno arrivano solo dai pedali calibrati (più sotto)
+      } else if (b.padThrottleAxis >= 0 && pad.axes[b.padThrottleAxis] !== undefined) {
         const axVal = pad.axes[b.padThrottleAxis];
         const isUnlocked = rest ? rest.activeAxes.has(b.padThrottleAxis) : true;
         if (isUnlocked) {
@@ -391,6 +581,33 @@ export class ControllerManager {
         this.onReplayPressed();
       }
       this._prevReplayBtn = replayPressed;
+    }
+
+    // Volante: l'angolo di volante scelto per la sterzata piena (lockDeg, da finecorsa a finecorsa) diventa ±100%.
+    // Il browser riporta tutta la rotazione del driver (es. 900°) come -1..1, quindi si amplifica e si limita.
+    if (mode === 'wheel' && wheel.steer) {
+      const wheelPad = this.findPad(allPads, wheel.steer.device);
+      const axVal = wheelPad?.axes[wheel.steer.axis];
+      if (axVal !== undefined) {
+        const rotation = Math.max(90, wheel.rotation ?? 900);
+        const lock = Math.max(30, Math.min(rotation, wheel.lockDeg ?? 180));
+        padSteer = Math.max(-1, Math.min(1, (axVal * rotation) / lock));
+      }
+    }
+
+    // Pedaliera calibrata (anche su una USB diversa dal volante)
+    if (mode === 'wheel') {
+      padThr = Math.max(padThr, this.readPedal(allPads, wheel.pedalThrottle));
+      padBrk = Math.max(padBrk, this.readPedal(allPads, wheel.pedalBrake));
+    }
+
+    // Radiocomando RC via USB: volantino e grilletto calibrati (centro e fine corsa), grilletto su un solo asse
+    // come sulla radio vera: tirato = gas, spinto = freno/retro
+    if (mode === 'rc') {
+      if (wheel.rcSteer && this.findPad(allPads, wheel.rcSteer.device)) padSteer = this.readCenteredAxis(allPads, wheel.rcSteer);
+      const trig = this.readCenteredAxis(allPads, wheel.rcThrottle);
+      if (trig > 0) padThr = Math.max(padThr, trig);
+      else padBrk = Math.max(padBrk, -trig);
     }
 
     // Combina Tastiera e Joypad (la tastiera ha sempre priorità immediata quando premuta).
@@ -447,7 +664,8 @@ export class ControllerManager {
     if (steerGoal === 0 && Math.abs(this.processedSteer) < 0.01) this.processedSteer = 0;
 
     // Gas: una sola curva (zona morta grilletto → esponenziale del menu → trim), senza filtri: arriva alla fisica nello stesso frame.
-    const triggerDeadzone = Math.min(5, ctrl.deadzone ?? 4);
+    const hasPedals = mode === 'wheel' && Boolean(wheel.pedalThrottle || wheel.pedalBrake);
+    const triggerDeadzone = hasPedals ? Math.max(0, Math.min(15, wheel.pedalDeadzone ?? 3)) : Math.min(5, ctrl.deadzone ?? 4);
     const thrClean = this.applyDeadzone(this.rawThrottle, triggerDeadzone);
     const thrCurved = this.applyExpCurve(thrClean, ctrl.throttleExp ?? 0);
     const thrTrim = thrCurved > 0 ? (ctrl.throttleTrim ?? 0) / 200 : 0;
