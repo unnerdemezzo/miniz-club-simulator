@@ -66,10 +66,10 @@ export function installDemoUi() {
   document.head.append(
     Object.assign(document.createElement('style'), {
       textContent: `
-#demo-band{position:fixed;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9000;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 24px);padding:8px 10px 8px 14px;border-radius:999px;background:rgba(9,13,22,.92);border:1px solid #e11d48;color:#f8fafc;font:600 12px/1.3 'Titillium Web',system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.45)}
-#demo-band b{color:#fff;background:#e11d48;border-radius:999px;padding:3px 9px;font-weight:900;letter-spacing:.08em}
-#demo-toast{position:fixed;left:50%;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 56px);transform:translateX(-50%);z-index:9001;max-width:min(520px,calc(100vw - 24px));padding:12px 16px;border-radius:12px;background:#111827;border:1px solid #e11d48;color:#f8fafc;font:600 14px/1.4 'Titillium Web',system-ui,sans-serif;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.5)}
-#demo-band a{flex-shrink:0;color:#fff;background:#e11d48;border-radius:999px;padding:6px 12px;font-weight:800;text-decoration:none}
+#demo-band{position:fixed;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9000;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 24px);padding:8px 10px 8px 14px;border-radius:999px;background:rgba(9,13,22,.92);border:1px solid #b3202a;color:#f8fafc;font:600 12px/1.3 'Titillium Web',system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.45)}
+#demo-band b{color:#fff;background:#b3202a;border-radius:999px;padding:3px 9px;font-weight:900;letter-spacing:.08em}
+#demo-toast{position:fixed;left:50%;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 56px);transform:translateX(-50%);z-index:9001;max-width:min(520px,calc(100vw - 24px));padding:12px 16px;border-radius:12px;background:#111827;border:1px solid #b3202a;color:#f8fafc;font:600 14px/1.4 'Titillium Web',system-ui,sans-serif;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+#demo-band a{flex-shrink:0;color:#fff;background:#b3202a;border-radius:999px;padding:6px 12px;font-weight:800;text-decoration:none}
 .demo-locked{opacity:.45!important;cursor:not-allowed!important;filter:grayscale(.7)}
 .demo-locked *{cursor:not-allowed!important}
 @media (max-width:720px){#demo-band span{display:none}}`

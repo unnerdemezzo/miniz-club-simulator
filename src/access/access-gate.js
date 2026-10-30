@@ -73,7 +73,7 @@ function createOverlay(onRetry) {
   retry.type = 'button';
   retry.textContent = 'Riprova';
   Object.assign(retry.style, {
-    padding: '12px 24px', border: '0', borderRadius: '8px', background: '#e11d48',
+    padding: '12px 24px', border: '0', borderRadius: '8px', background: '#b3202a',
     color: '#fff', font: "700 16px 'Titillium Web', system-ui", cursor: 'pointer'
   });
   retry.addEventListener('click', onRetry);
