@@ -12,7 +12,7 @@ import {
   DIFFERENTIALS
 } from './data/parts.js';
 import { TRACK_LAYOUTS } from './data/tracks.js';
-import { ProfileManager, CONTROLLER_PRESETS } from './storage/ProfileManager.js';
+import { ProfileManager, CONTROLLER_PRESETS, MODE_PRESET } from './storage/ProfileManager.js';
 import { ControllerManager } from './input/ControllerManager.js';
 import { SoundAndCommentary } from './audio/SoundAndCommentary.js';
 import { ReplaySystem, REPLAY_CAMERAS } from './replay/ReplaySystem.js';
@@ -410,7 +410,10 @@ class MiniZSimulatorApp {
     this.controller.onRestartRacePressed = () => onTrack() && this.restartRace();
     this.controller.onCameraPressed = () => onTrack() && this.cycleDriveCameraMode();
     this.controller.onReplayPressed = () => onTrack() && this.toggleReplayMode();
-    this.controller.onDevicesChanged = () => this.refreshGamepadDeviceSelect();
+    this.controller.onDevicesChanged = () => {
+      this.refreshGamepadDeviceSelect();
+      this.refreshHardwareUI();
+    };
 
     document.getElementById('btn-restart-race')?.addEventListener('click', () => this.restartRace());
     document.getElementById('btn-marshal-reset')?.addEventListener('click', () => this.triggerMarshalReset());
@@ -912,6 +915,125 @@ class MiniZSimulatorApp {
     sel.value = curVal;
   }
 
+  // Volante + pedaliera e radiocomando RC via USB
+  initHardwareListeners() {
+    const pm = this.profileManager;
+    document.getElementById('sel-control-mode')?.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      pm.updateWheelConfig({ mode });
+      // Ogni tipo di comando parte dalle sue curve (volante lineare, radio come una radio di serie, joypad più dolce)
+      const preset = CONTROLLER_PRESETS[MODE_PRESET[mode] || 'joypad'];
+      pm.updateActiveController({ ...preset }, this.bodyNamesMap, this.trackNamesMap);
+      this.controller.selectActivePad();
+      this.refreshMenuUI();
+    });
+    document.getElementById('sel-wheel-rotation')?.addEventListener('change', (e) => {
+      const rotation = Number(e.target.value);
+      const w = pm.getWheelConfig();
+      pm.updateWheelConfig({ rotation, lockDeg: Math.min(w.lockDeg ?? 180, rotation) });
+      this.refreshHardwareUI();
+    });
+    document.getElementById('rng-wheel-lock')?.addEventListener('input', (e) => {
+      const w = pm.getWheelConfig();
+      const lockDeg = Math.min(Number(e.target.value), w.rotation ?? 900);
+      pm.updateWheelConfig({ lockDeg });
+      const v = document.getElementById('val-wheel-lock');
+      if (v) v.textContent = `${lockDeg}°`;
+    });
+    document.getElementById('rng-pedal-dz')?.addEventListener('input', (e) => {
+      pm.updateWheelConfig({ pedalDeadzone: Number(e.target.value) });
+      const v = document.getElementById('val-pedal-dz');
+      if (v) v.textContent = `${e.target.value}%`;
+    });
+
+    const waitText = {
+      wheelSteer: 'Gira ora il volante...',
+      pedalThrottle: 'Premi il gas a fondo e rilascia...',
+      pedalBrake: 'Premi il freno a fondo e rilascia...',
+      rcSteer: 'Destra a fondo, sinistra a fondo, lascia...',
+      rcThrottle: 'Tira a fondo, spingi a fondo, lascia...'
+    };
+    const configKey = { wheelSteer: 'steer', pedalThrottle: 'pedalThrottle', pedalBrake: 'pedalBrake', rcSteer: 'rcSteer', rcThrottle: 'rcThrottle' };
+    document.querySelectorAll('.hw-cal-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const kind = btn.dataset.cal;
+        document.querySelectorAll('.hw-cal-btn').forEach((b) => b.classList.remove('listening'));
+        btn.classList.add('listening');
+        btn.textContent = waitText[kind];
+        this.controller.startWheelCalibration(kind, (doneKind, result) => {
+          btn.classList.remove('listening');
+          if (result) {
+            pm.updateWheelConfig({ [configKey[doneKind]]: result });
+            this.controller.selectActivePad();
+          } else {
+            this.sound.speak('Calibrazione non riuscita, riprova portando il comando fino a fine corsa.', 'normal');
+          }
+          this.refreshHardwareUI();
+        });
+      });
+    });
+  }
+
+  refreshHardwareUI() {
+    const w = this.profileManager.getWheelConfig();
+    const mode = w.mode ?? 'pad';
+    const modeSel = document.getElementById('sel-control-mode');
+    if (modeSel) modeSel.value = mode;
+    document.getElementById('hw-wheel-fields')?.classList.toggle('visible', mode === 'wheel');
+    document.getElementById('hw-rc-fields')?.classList.toggle('visible', mode === 'rc');
+
+    const rotSel = document.getElementById('sel-wheel-rotation');
+    if (rotSel) rotSel.value = String(w.rotation ?? 900);
+    const lock = document.getElementById('rng-wheel-lock');
+    if (lock) {
+      lock.max = String(w.rotation ?? 900);
+      lock.value = String(w.lockDeg ?? 180);
+    }
+    const lockVal = document.getElementById('val-wheel-lock');
+    if (lockVal) lockVal.textContent = `${w.lockDeg ?? 180}°`;
+    const dz = document.getElementById('rng-pedal-dz');
+    if (dz) dz.value = String(w.pedalDeadzone ?? 3);
+    const dzVal = document.getElementById('val-pedal-dz');
+    if (dzVal) dzVal.textContent = `${w.pedalDeadzone ?? 3}%`;
+
+    const connected = this.controller.getConnectedDevices();
+    const isConnected = (cal) => cal && connected.some((d) => d.id === cal.device);
+    const describe = (cal) => {
+      if (!cal) return 'non calibrato';
+      const name = cal.device.replace(/\s*\(.*$/, '').slice(0, 32);
+      return `${name} • asse ${cal.axis}${isConnected(cal) ? '' : ' (non collegato)'}`;
+    };
+    const setTxt = (id, t) => {
+      const e = document.getElementById(id);
+      if (e) e.textContent = t;
+    };
+    setTxt('lbl-wheel-steer', describe(w.steer));
+    setTxt('lbl-pedal-throttle', describe(w.pedalThrottle));
+    setTxt('lbl-pedal-brake', describe(w.pedalBrake));
+    setTxt('lbl-rc-steer', describe(w.rcSteer));
+    setTxt('lbl-rc-throttle', describe(w.rcThrottle));
+
+    const btnText = {
+      wheelSteer: 'Calibra: gira il volante',
+      pedalThrottle: 'Calibra: premi a fondo e rilascia',
+      pedalBrake: 'Calibra: premi a fondo e rilascia',
+      rcSteer: 'Calibra',
+      rcThrottle: 'Calibra'
+    };
+    document.querySelectorAll('.hw-cal-btn:not(.listening)').forEach((b) => {
+      b.textContent = btnText[b.dataset.cal];
+    });
+
+    const wheels = connected.filter((d) => d.isWheel);
+    let note = '';
+    const radios = connected.filter((d) => d.isRcRadio);
+    if (mode === 'pad' && radios.length) note = `📻 Rilevato: ${radios[0].id.slice(0, 48)}. Scegli "Radiocomando RC collegato via USB" per usarlo.`;
+    else if (mode === 'pad' && wheels.length) note = `🏁 Rilevato: ${wheels[0].id.slice(0, 48)}. Scegli "Volante + Pedaliera" per usarlo.`;
+    else if (mode === 'wheel' && !w.steer) note = 'Calibra lo sterzo e i due pedali: vale per tutte le auto e le piste.';
+    else if (mode === 'rc' && !(w.rcSteer && w.rcThrottle)) note = 'Calibra volantino e grilletto: vale per tutte le auto e le piste.';
+    setTxt('hw-detected', note);
+  }
+
   triggerMarshalReset() {
     if (!this.trackData || !this.car) return;
     const pose = this.club.getNearestTrackPose(this.car.state.x, this.car.state.z);
@@ -1069,6 +1191,8 @@ class MiniZSimulatorApp {
         });
       });
     });
+
+    this.initHardwareListeners();
 
     // Copia e Applica Profilo Salvato all'Auto e Pista attuale
     const applySelectedProfile = async (mode) => {
@@ -1312,6 +1436,7 @@ class MiniZSimulatorApp {
     if (invT) invT.checked = Boolean(ctrl.invertThrottle);
 
     this.refreshGamepadDeviceSelect();
+    this.refreshHardwareUI();
 
     // Etichette pulsanti mappatura Joypad
     const b = ctrl.Bindings;

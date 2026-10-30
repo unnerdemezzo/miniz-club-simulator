@@ -1501,6 +1501,60 @@ body.standings-hidden .standings-show-btn {
   animation: pulseMic 0.7s infinite alternate;
 }
 
+.hw-box {
+  margin-top: 16px;
+  background: #0b1220;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hw-box h4 {
+  margin: 0;
+}
+
+.hw-fields {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hw-fields.visible {
+  display: flex;
+}
+
+.hw-fields > small {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.hw-note {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.hw-cal-btn {
+  background: #334155;
+  border: 1px solid #64748b;
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  max-width: 55%;
+}
+
+.hw-cal-btn.listening {
+  background: var(--accent);
+  border-color: var(--accent-line);
+  animation: pulseMic 0.7s infinite alternate;
+}
+
 /* ================= SCHEDA SISTEMA & BACKUP ================= */
 .system-grid {
   display: grid;
