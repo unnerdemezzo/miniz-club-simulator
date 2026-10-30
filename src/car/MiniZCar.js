@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { prepareHypercarBody, visibleMeshBox } from './hypercar-body.js';
 import {
   REAL_SCALE,
   CAR_BODIES,
@@ -183,100 +184,17 @@ export class MiniZCar {
     this.glbWheelNodes = { lf: [], rf: [], lr: [], rr: [], steerLf: [], steerRf: [] };
 
     const bodySpec = CAR_BODIES.find((b) => b.id === bodyId) || CAR_BODIES[0];
+    this.bodyId = bodySpec.id;
 
     if (bodySpec.glbUrl) {
       try {
         const gltfScene = await this.fetchGlbModel(bodySpec.glbUrl);
         const clone = gltfScene.clone(true);
 
-        // Nasconde i nodi sfocati (RIM_BLUR), i billboard opachi (glowx) e i 150+ micro-pulsanti invisibili del volante interno per massimizzare gli FPS!
-        clone.traverse((node) => {
-          const name = node.name || '';
-          const matName = node.material?.name || '';
-          if (
-            /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|STEER_HR|DAMAGE|glow|LED_0|TXLAP|TXDEL|TXFUEL|LAPTIME|DELTA2|FUEL2|WIPER/i.test(name) ||
-            /Rim_Blur|GLOW|TRANSPARENTE|kers_|963_|sw_|shift_lights|dials_alpha|logo_cos/i.test(matName)
-          ) {
-            node.visible = false;
-          }
-          if (node.isMesh && node.visible) {
-            node.castShadow = /^Body$|^main$|Tyre|RIMS/i.test(matName);
-            node.receiveShadow = true;
-
-            // Clona e calibra i materiali PBR del modello 3D Ferrari 499P
-            node.material = Array.isArray(node.material)
-              ? node.material.map((m) => (m ? m.clone() : m))
-              : node.material
-                ? node.material.clone()
-                : node.material;
-            const mats = Array.isArray(node.material) ? node.material : [node.material];
-            const useCustomColor =
-              customColorHex &&
-              bodySpec.defaultColor &&
-              customColorHex.toLowerCase() !== bodySpec.defaultColor.toLowerCase();
-            const tintHex = useCustomColor ? customColorHex : bodySpec.liveryTint || '#ffffff';
-
-            mats.forEach((mat) => {
-              if (!mat) return;
-              const mName = mat.name || '';
-              if (mat.map) mat.map.anisotropy = 8;
-
-              if (/^Body(\.\d+)?$/i.test(mName) || /^main$/i.test(mName) || /paint|carpaint|geomainbody|mat_44|exterior_mm_ext|livery/i.test(mName)) {
-                // Vernice vera con saturazione attenuata per il massimo fotorealismo
-                if (mat.color) {
-                  mat.color.set(tintHex);
-                  const hsl = { h: 0, s: 0, l: 0 };
-                  mat.color.getHSL(hsl);
-                  mat.color.setHSL(hsl.h, hsl.s * 0.62, hsl.l * 0.89);
-                }
-                mat.metalness = 0.05; mat.metalnessMap = null;
-                mat.roughness = 0.34;
-                if ('clearcoat' in mat) {
-                  mat.clearcoat = 0.85;
-                  mat.clearcoatRoughness = 0.09;
-                }
-                if (mat.emissive) mat.emissive.setRGB(0, 0, 0);
-                mat.emissiveMap = null;
-                mat.emissiveIntensity = 0.0;
-                mat.envMapIntensity = 0.92;
-                mat.needsUpdate = true;
-              } else if (/Glass/i.test(mName)) {
-                mat.metalness = 0.08;
-                mat.roughness = 0.06;
-                mat.transparent = true;
-                mat.opacity = 0.62;
-                mat.needsUpdate = true;
-              } else if (/Tyre/i.test(mName)) {
-                mat.metalness = 0.04;
-                mat.roughness = 0.78;
-                mat.needsUpdate = true;
-              } else if (/RIMS|Wheels/i.test(mName)) {
-                mat.color?.setRGB(0.92, 0.92, 0.95);
-                mat.metalness = 0.75;
-                mat.roughness = 0.24;
-                mat.needsUpdate = true;
-              }
-            });
-          }
-        });
+        prepareHypercarBody(clone);
 
         // Calcola il Bounding Box reale solo sui mesh VISIBILI del modello .glb per ridimensionarlo esattamente a 17.2 cm
-        clone.updateMatrixWorld(true);
-        const box = new THREE.Box3();
-        clone.traverse((node) => {
-          if (node.isMesh && node.visible) {
-            let p = node.parent;
-            let allVis = true;
-            while (p) {
-              if (!p.visible) {
-                allVis = false;
-                break;
-              }
-              p = p.parent;
-            }
-            if (allVis) box.expandByObject(node);
-          }
-        });
+        const box = visibleMeshBox(clone);
         const size = new THREE.Vector3();
         const center = new THREE.Vector3();
         box.getSize(size);
@@ -295,22 +213,7 @@ export class MiniZCar {
           clone.rotation.y = Math.PI / 2;
         }
 
-        clone.updateMatrixWorld(true);
-        const scaledBox = new THREE.Box3();
-        clone.traverse((node) => {
-          if (node.isMesh && node.visible) {
-            let p = node.parent;
-            let allVis = true;
-            while (p) {
-              if (!p.visible) {
-                allVis = false;
-                break;
-              }
-              p = p.parent;
-            }
-            if (allVis) scaledBox.expandByObject(node);
-          }
-        });
+        const scaledBox = visibleMeshBox(clone);
         const scaledCenter = new THREE.Vector3();
         scaledBox.getCenter(scaledCenter);
 

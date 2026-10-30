@@ -20,6 +20,8 @@ import { buildRoomGuests } from '../club/room-guests.js';
 import { ROOM_LINK } from '../club/club-tracks.js';
 import { makeCar } from '../club/car.js';
 import { resolveCarContacts, yawFromImpulse } from '../car/CarContacts.js';
+import { prepareHypercarBody, visibleMeshBox } from '../car/hypercar-body.js';
+import { CAR_BODIES } from '../data/parts.js';
 
 // Ingombro in pianta per i contatti: Mini-Z 17,2 cm x 8 cm (avversari scalati 1,16 nel modello 3D)
 const CAR_HALF_SEG = 0.05;
@@ -906,99 +908,21 @@ export class ClubEnvironment {
 
     if (this.curve) this.aiCars.forEach((ai) => this.placeAiCar(ai));
 
-    // Sostituisce le auto AI procedurali con veri modelli 3D Hypercar in scala 1:27 con livree WEC desaturate e realistiche
-    const applyGlbToAiCars = (gltfScene) => {
-      const aiTints = ['#c99e28', '#336699', '#d1d7e0']; // #83 Giallo Modena naturale, #50 Blu Corsa, #51 Bianco/Rosso
-      this.aiCars.forEach((ai, idx) => {
-        const clone = gltfScene.clone(true);
-        const tintHex = aiTints[idx % aiTints.length];
-
-        clone.traverse((node) => {
-          const name = node.name || '';
-          const matName = node.material?.name || '';
-          // Esclude anche i 150+ micro-pulsanti interni del volante per garantire 60+ FPS costanti!
-          if (
-            /RIM_BLUR|Rim_Blurred|COCKPIT_LR|STEER_LR|STEER_HR|DAMAGE|glow|LED_0|TXLAP|TXDEL|TXFUEL|LAPTIME|DELTA2|FUEL2|WIPER/i.test(name) ||
-            /Rim_Blur|GLOW|TRANSPARENTE|kers_|963_|sw_|shift_lights|dials_alpha|logo_cos/i.test(matName)
-          ) {
-            node.visible = false;
-          }
-          if (node.isMesh && node.visible) {
-            node.castShadow = /^Body$|^main$|Tyre|RIMS/i.test(matName);
-            node.receiveShadow = true;
-            node.material = Array.isArray(node.material)
-              ? node.material.map((m) => (m ? m.clone() : m))
-              : node.material
-                ? node.material.clone()
-                : node.material;
-            const mats = Array.isArray(node.material) ? node.material : [node.material];
-            mats.forEach((mat) => {
-              if (!mat) return;
-              const mName = mat.name || '';
-              if (/^Body$/i.test(mName) || /^main$/i.test(mName)) {
-                if (mat.color) {
-                  mat.color.set(tintHex);
-                  const hsl = { h: 0, s: 0, l: 0 };
-                  mat.color.getHSL(hsl);
-                  mat.color.setHSL(hsl.h, hsl.s * 0.62, hsl.l * 0.89);
-                }
-                mat.metalness = 0.06;
-                mat.roughness = 0.34;
-                if ('clearcoat' in mat) {
-                  mat.clearcoat = 0.85;
-                  mat.clearcoatRoughness = 0.09;
-                }
-                if (mat.emissive) mat.emissive.setRGB(0, 0, 0);
-                mat.emissiveMap = null;
-                mat.emissiveIntensity = 0.0;
-                mat.envMapIntensity = 0.92;
-                mat.needsUpdate = true;
-              }
-            });
-          }
-        });
-
-        clone.updateMatrixWorld(true);
-        const box = new THREE.Box3();
-        clone.traverse((node) => {
-          if (node.isMesh && node.visible) {
-            let p = node.parent;
-            let allVis = true;
-            while (p) {
-              if (!p.visible) {
-                allVis = false;
-                break;
-              }
-              p = p.parent;
-            }
-            if (allVis) box.expandByObject(node);
-          }
-        });
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        const scaleFactor = 0.172 / Math.max(size.z, size.x, 0.001);
-        clone.scale.setScalar(scaleFactor);
+    // Sostituisce le auto AI procedurali con altre Hypercar del catalogo (diverse da quella del giocatore),
+    // ognuna con la sua livrea originale: niente più Ferrari 499P ricolorate.
+    const aiBodies = CAR_BODIES.filter((b) => b.glbUrl && !b.id.startsWith('custom_') && b.id !== this.playerBodyId);
+    this.aiCars.forEach((ai, idx) => {
+      const spec = aiBodies[idx % aiBodies.length];
+      if (!spec) return;
+      this.loadAiBodyScene(spec.glbUrl).then((gltfScene) => {
+        if (!this.aiCars.includes(ai)) return;
+        const clone = prepareHypercarBody(gltfScene.clone(true));
+        const size = visibleMeshBox(clone).getSize(new THREE.Vector3());
+        clone.scale.setScalar((spec.lengthCm || 17.2) / 100 / Math.max(size.z, size.x, 0.001));
         // Orienta il muso lungo +X locale di ai.carObj.root
-        clone.rotation.y = Math.PI / 2;
-        clone.updateMatrixWorld(true);
-
-        const scaledBox = new THREE.Box3();
-        clone.traverse((node) => {
-          if (node.isMesh && node.visible) {
-            let p = node.parent;
-            let allVis = true;
-            while (p) {
-              if (!p.visible) {
-                allVis = false;
-                break;
-              }
-              p = p.parent;
-            }
-            if (allVis) scaledBox.expandByObject(node);
-          }
-        });
-        const scCenter = new THREE.Vector3();
-        scaledBox.getCenter(scCenter);
+        clone.rotation.y = size.x > size.z * 1.15 ? 0 : Math.PI / 2;
+        const scaledBox = visibleMeshBox(clone);
+        const scCenter = scaledBox.getCenter(new THREE.Vector3());
         clone.position.x -= scCenter.x;
         clone.position.z -= scCenter.z;
         clone.position.y -= scaledBox.min.y;
@@ -1009,23 +933,16 @@ export class ClubEnvironment {
         ai.carObj.wheels = [];
         ai.carObj.root.scale.setScalar(1.0);
         ai.carObj.root.add(clone);
-      });
-    };
+      }, () => {});
+    });
+  }
 
-    if (this.aiGlbScene) {
-      applyGlbToAiCars(this.aiGlbScene);
-    } else {
-      const loader = new GLTFLoader();
-      loader.load(
-        '/models/ferrari_499p.glb',
-        (gltf) => {
-          this.aiGlbScene = gltf.scene;
-          applyGlbToAiCars(gltf.scene);
-        },
-        undefined,
-        () => {}
-      );
+  loadAiBodyScene(url) {
+    this.aiGlbScenes ||= new Map();
+    if (!this.aiGlbScenes.has(url)) {
+      this.aiGlbScenes.set(url, new GLTFLoader().loadAsync(url).then((gltf) => gltf.scene));
     }
+    return this.aiGlbScenes.get(url);
   }
 
   // Superficie mattonelle Kyosho RCP in vero grigio gomma EVA opaco con giunzioni a puzzle

@@ -749,6 +749,7 @@ class MiniZSimulatorApp {
     this.sessionBestLapSec = null;
     this.club.lastBridgeSide = null;
     this.club.lapArmed = false;
+    this.club.playerBodyId = this.car.bodyId;
     this.club.spawnAiCars();
     this.club.aiCars.forEach((ai) => {
       ai.speed = 0;
