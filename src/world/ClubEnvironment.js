@@ -21,6 +21,7 @@ import { ROOM_LINK } from '../club/club-tracks.js';
 import { makeCar } from '../club/car.js';
 import { resolveCarContacts, yawFromImpulse } from '../car/CarContacts.js';
 import { prepareHypercarBody, visibleMeshBox } from '../car/hypercar-body.js';
+import { trackHdLivery } from '../car/hd-livery.js';
 import { CAR_BODIES } from '../data/parts.js';
 
 // Ingombro in pianta per i contatti: Mini-Z 17,2 cm x 8 cm (avversari scalati 1,16 nel modello 3D)
@@ -917,6 +918,7 @@ export class ClubEnvironment {
       this.loadAiBodyScene(spec.glbUrl).then((gltfScene) => {
         if (!this.aiCars.includes(ai)) return;
         const clone = prepareHypercarBody(gltfScene.clone(true));
+        trackHdLivery(clone, spec.glbUrl);
         const size = visibleMeshBox(clone).getSize(new THREE.Vector3());
         clone.scale.setScalar((spec.lengthCm || 17.2) / 100 / Math.max(size.z, size.x, 0.001));
         // Orienta il muso lungo +X locale di ai.carObj.root

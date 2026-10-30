@@ -5,10 +5,13 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
+// Alta come Slot-Car (js/graphics-quality.js): fino alla densità reale dello schermo (Retina, telefoni, 4K), perché una
+// Mini-Z vista dal palco occupa poche decine di pixel e ogni pixel in più si vede su livree e profili. Se la GPU non
+// regge, la risoluzione adattiva (monitor) scende da sola fino al livello di Media. Media e Bassa restano leggere.
 export const GRAPHICS_PROFILES = {
-  alta: { maxDpr: 1.65, maxLongEdge: 2560, maxShortEdge: 1440, shadows: true, shadowMapSize: 2048 },
-  media: { maxDpr: 1.15, maxLongEdge: 1920, maxShortEdge: 1080, shadows: true, shadowMapSize: 1024 },
-  bassa: { maxDpr: 0.80, maxLongEdge: 1280, maxShortEdge: 720, shadows: false, shadowMapSize: 512 }
+  alta: { maxDpr: 3, maxLongEdge: 3840, maxShortEdge: 2160, shadows: true, shadowMapSize: 4096, carShadowMapSize: 2048 },
+  media: { maxDpr: 1.15, maxLongEdge: 1920, maxShortEdge: 1080, shadows: true, shadowMapSize: 1024, carShadowMapSize: 1024 },
+  bassa: { maxDpr: 0.80, maxLongEdge: 1280, maxShortEdge: 720, shadows: false, shadowMapSize: 512, carShadowMapSize: 512 }
 };
 
 export function qualityPixelRatio(quality, width, height, displayDpr) {
@@ -100,6 +103,10 @@ export function createQualityComposer(renderer, scene, camera, mainLight = null,
 
   let effects = null;
   let effectsKey = '';
+  // Frazione della risoluzione di Alta in uso (1 = piena); il minimo è la risoluzione di Media
+  let resolutionScale = 1;
+  let resolutionFloor = 1;
+  const fpsWindow = { warm: 0, seconds: 0, frames: 0, last: 0 };
 
   // Tonalità, saturazione e luminosità come Slot-Car: curva ACES Filmic con esposizione 1,0
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -110,7 +117,11 @@ export function createQualityComposer(renderer, scene, camera, mainLight = null,
     const profile = GRAPHICS_PROFILES[currentProfileKey] || GRAPHICS_PROFILES.alta;
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
-    const dpr = qualityPixelRatio(currentProfileKey, w, h, window.devicePixelRatio || 1);
+    const displayDpr = window.devicePixelRatio || 1;
+    const fullDpr = qualityPixelRatio(currentProfileKey, w, h, displayDpr);
+    resolutionFloor = currentProfileKey === 'alta' ? Math.min(1, qualityPixelRatio('media', w, h, displayDpr) / fullDpr) : 1;
+    resolutionScale = Math.max(resolutionFloor, Math.min(1, resolutionScale));
+    const dpr = fullDpr * resolutionScale;
 
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h);
@@ -123,6 +134,7 @@ export function createQualityComposer(renderer, scene, camera, mainLight = null,
     }
     for (const light of extraShadowLights) {
       light.castShadow = profile.shadows;
+      setShadowMapSize(light, profile.carShadowMapSize);
     }
 
     // Il compositore si ricrea solo quando cambia la qualità; per il resto basta ridimensionarlo
@@ -131,6 +143,14 @@ export function createQualityComposer(renderer, scene, camera, mainLight = null,
       effects = buildEffects(renderer, scene, camera, currentProfileKey, w, h, dpr);
       effectsKey = currentProfileKey;
     } else if (effects) {
+      // Come Slot-Car: oltre 2,5 milioni di pixel bastano 2 campioni MSAA invece di 4
+      const samples = w * h * dpr * dpr > 2.5e6 ? 2 : 4;
+      for (const target of [effects.renderTarget1, effects.renderTarget2]) {
+        if (target.samples !== samples) {
+          target.samples = samples;
+          target.dispose();
+        }
+      }
       effects.setPixelRatio(dpr);
       effects.setSize(w, h);
     }
@@ -156,7 +176,30 @@ export function createQualityComposer(renderer, scene, camera, mainLight = null,
       if (q === 'high' || q === 'alta') currentProfileKey = 'alta';
       else if (q === 'medium' || q === 'media') currentProfileKey = 'media';
       else currentProfileKey = 'bassa';
+      resolutionScale = 1;
+      fpsWindow.warm = fpsWindow.seconds = fpsWindow.frames = 0;
       applySettings();
+    },
+    // Come AdaptiveResolution di Slot-Car, semplificata: conta solo i fotogrammi di gara, aspetta 3 s di
+    // assestamento, poi ogni 5 s sotto i 28 FPS riduce la risoluzione del 15% (mai sotto quella di Media)
+    monitor(now, racing) {
+      const dt = fpsWindow.last ? (now - fpsWindow.last) / 1000 : 0;
+      fpsWindow.last = now;
+      if (!racing || !(dt > 0) || dt > 1 || resolutionScale <= resolutionFloor + 1e-3) {
+        fpsWindow.warm = fpsWindow.seconds = fpsWindow.frames = 0;
+        return;
+      }
+      if ((fpsWindow.warm += dt) < 3) return;
+      fpsWindow.seconds += dt;
+      fpsWindow.frames++;
+      if (fpsWindow.seconds < 5) return;
+      const fps = fpsWindow.frames / fpsWindow.seconds;
+      fpsWindow.seconds = fpsWindow.frames = 0;
+      if (fps < 28) {
+        resolutionScale = Math.max(resolutionFloor, resolutionScale * 0.85);
+        fpsWindow.warm = 0;
+        applySettings();
+      }
     },
     resize() {
       applySettings();

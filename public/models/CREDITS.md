@@ -15,3 +15,5 @@ Modelli scaricati da Sketchfab e adattati al gioco (pezzi separati Body / WHEEL_
 | `peugeot_9x8.glb` | [2024 Peugeot 9X8 Hybrid Hypercar LMH](https://sketchfab.com/3d-models/2024-peugeot-9x8-hybrid-hypercar-lmh-0f86d9080f9a4ae891f6361dd72b34ea) | Ddiaz Design (https://sketchfab.com/ddiaz-design) | CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | `porsche_963.glb` | [2023 Porsche 963 LMDh Racecar No.5](https://sketchfab.com/3d-models/2023-porsche-963-lmdh-racecar-no5-0b46fea1c4484a0c887bd0b9aac86f5d) | Ddiaz Design (https://sketchfab.com/ddiaz-design) | CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | `toyota_tr010.glb` | [2026 Toyota TR010 (read description)](https://sketchfab.com/3d-models/2026-toyota-tr010-read-description-9d9800d56b754f65acfba6f91966a5c3) | LMP12 (https://sketchfab.com/LMP12) | CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/) |
+
+Le livree in `hd/` (Alpine A424, BMW M Hybrid V8, Aston Martin Valkyrie) sono le texture originali degli stessi modelli qui sopra, ridotte a 2048 px: valgono gli stessi autori e le stesse licenze.

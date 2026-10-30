@@ -21,6 +21,8 @@ L'app si apre sulla schermata **Impostazioni gara** (`#race-setup-screen`, `show
 
 - Carrozzerie Hypercar (`public/models/*.glb`, crediti in `public/models/CREDITS.md`): i materiali PBR restano quelli dei modelli originali, `src/car/hypercar-body.js` li clona soltanto (niente tinte, desaturazione o metallo/rugosità forzati), sia per il giocatore sia per gli avversari, che usano altre Hypercar del catalogo. Nodi richiesti: `Body` e `WHEEL_LF/RF/LR/RR`, muso verso +Z, in metri.
 
+- Qualità visiva delle auto: in Alta la risoluzione arriva alla densità reale dello schermo (fino a 3×/4K, come Slot-Car) e scende da sola fino al livello di Media se in gara si va sotto 28 FPS (`monitor()` in `src/club/graphics-quality.js`). Filtro anisotropico al massimo della GPU su tutte le mappe delle carrozzerie. Livree HD 2048 px (`public/models/hd/*-livrea.webp`, ricavate dagli originali) caricate solo in Alta da `src/car/hd-livery.js` per Alpine, BMW e Aston Martin; per aggiungerne una servono l'originale a risoluzione maggiore e il nome del materiale della livrea.
+
 - Le auto si toccano davvero: `src/car/CarContacts.js` (capsule in pianta, impulsi a masse uguali) risolto ogni fotogramma da `ClubEnvironment.resolveCarContacts()`, per giocatore e avversari. Gli avversari evitano/sorpassano chi hanno davanti.
 - Griglia di partenza: `ClubEnvironment.gridSlot(k)` (0 = pole del giocatore, file sfalsate ogni 30 cm). I giri degli avversari si contano sotto il ponte (`lapLineT`).
 - Audio: ogni auto ha il suo motore con panner 3D (`SoundAndCommentary.createEngine`), l'ascoltatore è la telecamera.
