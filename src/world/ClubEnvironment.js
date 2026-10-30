@@ -874,6 +874,34 @@ export class ClubEnvironment {
     return turn >= 0 ? 1 : -1;
   }
 
+  // Parametro t (0..1) della linea ideale più vicino a (x, z), per la classifica in tempo reale.
+  // Con hintT cerca solo attorno all'ultimo valore noto (economico a ogni fotogramma).
+  trackT(x, z, hintT = null) {
+    if (!this.curve) return 0;
+    const n = 720;
+    if (this.progressCurve !== this.curve) {
+      this.progressCurve = this.curve;
+      this.progressPts = Array.from({ length: n }, (_, i) => this.curve.getPointAt(i / n));
+    }
+    const pts = this.progressPts;
+    const search = (from, count) => {
+      let best = 0;
+      let bestD = Infinity;
+      for (let k = 0; k < count; k++) {
+        const i = (((from + k) % n) + n) % n;
+        const d = (pts[i].x - x) ** 2 + (pts[i].z - z) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      return { best, bestD };
+    };
+    let r = hintT === null ? null : search(Math.round(hintT * n) - 40, 81);
+    if (!r || r.bestD > 0.09) r = search(0, n);
+    return r.best / n;
+  }
+
   // Posizione k in griglia (0 = pole): due colonne sfalsate, la pole all'interno della prima curva,
   // la seconda nell'altra colonna 24 cm dietro, e così via
   gridSlot(k) {
@@ -1023,6 +1051,7 @@ export class ClubEnvironment {
     this.aiCars.forEach((ai, idx) => {
       const spec = aiBodies[idx % aiBodies.length];
       if (!spec) return;
+      ai.bodyName = spec.name;
       this.loadAiBodyScene(spec.glbUrl).then((gltfScene) => {
         if (!this.aiCars.includes(ai)) return;
         const clone = prepareHypercarBody(gltfScene.clone(true));
