@@ -269,14 +269,15 @@ body, html {
   right: 12px;
   z-index: 20;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   flex-wrap: nowrap;
   pointer-events: none;
 }
 
-.brand-cluster,
+.race-standings,
+.standings-show-btn,
 .status-boxes-cluster,
 .top-actions-cluster {
   pointer-events: auto;
@@ -298,39 +299,225 @@ body, html {
   flex-shrink: 0;
 }
 
-.brand-cluster {
-  background: rgba(11, 15, 25, 0.86);
+/* CLASSIFICA DI GARA IN TEMPO REALE (in alto a sinistra, stile grafica TV) */
+.race-standings {
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 0 !important;
+  width: 232px;
+  flex-shrink: 0;
+  background: rgba(11, 15, 25, 0.88);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  padding: 6px 11px 6px 8px;
-  border-radius: 12px;
-  min-width: 0;
+  border-radius: 11px;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
 }
 
-.hud-mini-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  object-fit: cover;
-  border: 1.5px solid var(--accent);
+.standings-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 9px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+}
+
+.standings-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffffff;
+  animation: standings-pulse 1.4s ease-in-out infinite;
   flex-shrink: 0;
 }
 
-.hud-title {
-  font-size: 13.5px;
+@keyframes standings-pulse {
+  50% { opacity: 0.25; }
+}
+
+.standings-title {
+  flex: 1 1 auto;
+}
+
+.standings-cols {
+  display: flex;
+  gap: 4px;
+  font-size: 8.5px;
+  opacity: 0.85;
+}
+
+.standings-cols span:first-child {
+  width: 58px;
+  text-align: right;
+}
+
+.standings-cols span:last-child {
+  width: 20px;
+  text-align: right;
+}
+
+.standings-close {
+  border: none;
+  background: rgba(0, 0, 0, 0.25);
+  color: #ffffff;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.standings-close:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.standings-list {
+  list-style: none;
+  margin: 0;
+  padding: 3px 0;
+}
+
+.standings-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 32px 3px 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #e2e8f0;
+  border-left: 3px solid transparent;
+}
+
+.standings-row + .standings-row {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.standings-row.is-player {
+  background: rgba(250, 204, 21, 0.16);
+  border-left-color: #facc15;
+  color: #facc15;
+}
+
+.st-pos {
+  width: 16px;
+  text-align: center;
   font-weight: 900;
-  letter-spacing: 0.7px;
   color: #ffffff;
 }
 
-.hud-sub {
-  font-size: 11px;
-  color: #38bdf8;
-  font-weight: 600;
-  max-width: 245px;
+.standings-row.is-player .st-pos {
+  color: #facc15;
+}
+
+.st-num {
+  min-width: 24px;
+  padding: 1px 3px;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 900;
+  color: var(--car-txt, #ffffff);
+  background: var(--car-col, #475569);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.st-name {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.st-gap {
+  width: 58px;
+  text-align: right;
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+
+.standings-row.is-player .st-gap {
+  color: #fde68a;
+}
+
+.st-laps {
+  width: 20px;
+  text-align: right;
+  font-size: 11.5px;
+  color: #38bdf8;
+}
+
+/* Freccia verde/rossa per qualche secondo dopo un sorpasso */
+.standings-row.gained .st-pos::after,
+.standings-row.lost .st-pos::after {
+  font-size: 8px;
+  margin-left: 1px;
+}
+
+.standings-row.gained .st-pos::after {
+  content: '▲';
+  color: #22c55e;
+}
+
+.standings-row.lost .st-pos::after {
+  content: '▼';
+  color: #ef4444;
+}
+
+.standings-show-btn {
+  display: none !important;
+  flex-shrink: 0;
+}
+
+body.standings-hidden .race-standings {
+  display: none !important;
+}
+
+body.standings-hidden .standings-show-btn {
+  display: flex !important;
+}
+
+/* Sotto i 1300 px il banner della telecronaca si sposta a destra della classifica invece di coprirla */
+@media (max-width: 1300px) {
+  body:not(.standings-hidden) .commentary-banner {
+    left: 256px;
+    right: 12px;
+    transform: none;
+    max-width: none;
+    width: fit-content;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .race-standings {
+    width: 176px;
+  }
+  .standings-cols span:first-child,
+  .st-gap {
+    width: 44px;
+  }
+  .standings-row {
+    font-size: 11px;
+    padding: 2px 30px 2px 4px;
+  }
+  .st-gap,
+  .st-laps {
+    font-size: 10.5px;
+  }
+  .st-num {
+    min-width: 20px;
+    font-size: 9.5px;
+  }
+  body:not(.standings-hidden) .commentary-banner {
+    left: 196px;
+  }
 }
 
 /* RIQUADRINI VERSIONE, 3 MODALITÀ RISOLUZIONE, ABILITÀ IA, FPS */
@@ -1607,7 +1794,6 @@ body.in-race-setup .commentary-banner {
 }
 
 @media (max-width: 1400px) {
-  .hud-sub,
   .version-box {
     display: none;
   }

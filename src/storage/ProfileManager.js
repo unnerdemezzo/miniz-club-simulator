@@ -98,7 +98,8 @@ export class ProfileManager {
         diagonalInch: 27,
         aspect: 'auto', // 'auto' | '16:9' | '16:10' | '21:9' | '32:9' | '4:3' | '3:2'
         distanceCm: 65,
-        zoom: 1.0 // >1 allarga il campo visivo (vedi più pista), <1 lo stringe
+        zoom: 1.0, // >1 allarga il campo visivo (vedi più pista), <1 lo stringe
+        showStandings: true // classifica di gara in tempo reale in alto a sinistra
       },
       // Profili automatici indicizzati per chiave `${bodyId}__${trackId}`
       autoProfiles: {
