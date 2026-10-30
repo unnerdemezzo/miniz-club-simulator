@@ -26,9 +26,15 @@ import { CAR_BODIES } from '../data/parts.js';
 // Ingombro in pianta per i contatti: Mini-Z 17,2 cm x 8 cm (avversari scalati 1,16 nel modello 3D)
 const CAR_HALF_SEG = 0.05;
 const CAR_RADIUS = 0.04;
-// Griglia di partenza: file sfalsate a due a due, 30 cm tra una posizione e la successiva
-const GRID_ROW_GAP = 0.3;
+// Griglia di partenza stile F1 in scala Mini-Z: due colonne sfalsate, ogni posizione 24 cm dietro la precedente
+// (in F1 8 m per un'auto di 5,6 m, cioè 1,4 lunghezze: 17,2 cm x 1,4 ≈ 24 cm), 10 posizioni disegnate
+const GRID_SLOTS = 10;
+const GRID_ROW_GAP = 0.24;
 const GRID_LATERAL = 0.15;
+// Linea di partenza bianca 15 cm prima del traguardo a scacchi, piazzola della pole 4 cm dietro la linea
+const GRID_START_LINE = 0.15;
+const CAR_HALF_LENGTH = 0.086;
+const GRID_POLE_BEHIND = GRID_START_LINE + 0.04 + CAR_HALF_LENGTH + 0.015;
 
 const R = rng(21);
 
@@ -800,11 +806,11 @@ export class ClubEnvironment {
     // 3b. Allestimento scenografico interno in scala 1:27 sul tappeto verde (cartelloni sponsor, box telemetria e gomme di protezione)
     this.buildInfieldScenery(this.curveSamples, laneHalf);
 
-    // 4. Posizione di partenza: la pole è sul rettilineo principale prima del ponte (dritta, in corsia)
-    const startIdx = (bridgeIdx - 28 + numSamples) % numSamples;
-    const startSample = this.curveSamples[startIdx];
-    this.gridStartT = this.nearestCurveT(startSample.pt);
+    // 4. Griglia di partenza sul rettilineo principale, subito dietro al traguardo sotto il ponte
     this.lapLineT = this.nearestCurveT(bridgeSample.pt);
+    this.gridStartT = this.curveTBehind(this.lapLineT, GRID_POLE_BEHIND);
+    this.gridPoleSide = this.firstCornerSide(this.lapLineT);
+    this.buildGridMarks(spec.laneWidth);
     const playerSlot = this.gridSlot(0);
 
     // 5. Crea / reimposta le 3 Auto Avversarie AI Mini-Z sulla griglia, dietro al giocatore
@@ -847,6 +853,27 @@ export class ClubEnvironment {
     return best;
   }
 
+  // Parametro t della curva d metri prima di t0 (a ritroso nel senso di marcia)
+  curveTBehind(t0, d) {
+    return (((t0 - d / this.totalTrackLength) % 1) + 1) % 1;
+  }
+
+  // Lato (+1 / -1 sul segno di lane) verso cui gira la prima curva dopo il traguardo: lì sta la pole,
+  // come in F1, così chi parte davanti ha la traiettoria ideale. Vale anche con la pista invertita.
+  firstCornerSide(t0) {
+    const L = this.totalTrackLength;
+    let prev = this.curve.getTangentAt(t0);
+    let turn = 0;
+    // Somma le variazioni di direzione dal traguardo in avanti finché la pista non ha girato di 30°
+    for (let d = 0.1; d < L * 0.5 && Math.abs(turn) < Math.PI / 6; d += 0.1) {
+      const tan = this.curve.getTangentAt((t0 + d / L) % 1);
+      // Segno concorde con lane: lane positivo = (-tan.z, tan.x)
+      turn += Math.atan2(prev.x * tan.z - prev.z * tan.x, prev.x * tan.x + prev.z * tan.z);
+      prev = tan;
+    }
+    return turn >= 0 ? 1 : -1;
+  }
+
   // Parametro t (0..1) della linea ideale più vicino a (x, z), per la classifica in tempo reale.
   // Con hintT cerca solo attorno all'ultimo valore noto (economico a ogni fotogramma).
   trackT(x, z, hintT = null) {
@@ -875,11 +902,12 @@ export class ClubEnvironment {
     return r.best / n;
   }
 
-  // Posizione k in griglia (0 = pole): file sfalsate, la pole a sinistra, la seconda a destra 30 cm dietro...
+  // Posizione k in griglia (0 = pole): due colonne sfalsate, la pole all'interno della prima curva,
+  // la seconda nell'altra colonna 24 cm dietro, e così via
   gridSlot(k) {
-    const trackLen = Math.max(12, this.totalTrackLength);
-    const t = (((this.gridStartT ?? 0) - (k * GRID_ROW_GAP) / trackLen) % 1 + 1) % 1;
-    const lane = k % 2 === 0 ? -GRID_LATERAL : GRID_LATERAL;
+    const t = this.curveTBehind(this.gridStartT ?? 0, k * GRID_ROW_GAP);
+    const side = this.gridPoleSide ?? -1;
+    const lane = (k % 2 === 0 ? side : -side) * GRID_LATERAL;
     const pt = this.curve.getPointAt(t);
     const tan = this.curve.getTangentAt(t).normalize();
     return {
@@ -889,6 +917,87 @@ export class ClubEnvironment {
       z: pt.z + tan.x * lane,
       heading: Math.atan2(tan.x, tan.z)
     };
+  }
+
+  // Segni di griglia dipinti sul tappeto: linea di partenza bianca e una staffa a U aperta dietro per ognuna
+  // delle GRID_SLOTS posizioni, col numero della posizione accanto (leggibile nel senso di marcia)
+  buildGridMarks(laneWidth) {
+    const group = new THREE.Group();
+    group.name = 'Griglia di partenza';
+    const paint = new THREE.MeshStandardMaterial({
+      color: 0xf4f4f0,
+      roughness: 0.75,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2
+    });
+    const y = 0.0093;
+    const flat = (w, d, mat = paint) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+      m.rotation.x = -Math.PI / 2;
+      m.receiveShadow = true;
+      return m;
+    };
+    const place = (obj, t, lane = 0) => {
+      const pt = this.curve.getPointAt(t);
+      const tan = this.curve.getTangentAt(t).normalize();
+      obj.position.set(pt.x - tan.z * lane, y, pt.z + tan.x * lane);
+      // +Z locale nel senso di marcia, come il ponte di cronometraggio
+      obj.rotation.y = Math.atan2(tan.x, tan.z);
+      group.add(obj);
+    };
+
+    const startLine = new THREE.Group();
+    startLine.add(flat(laneWidth - 0.02, 0.018));
+    place(startLine, this.curveTBehind(this.lapLineT, GRID_START_LINE));
+
+    const boxW = 0.12;
+    const legLen = 0.07;
+    const front = CAR_HALF_LENGTH + 0.015;
+    for (let k = 0; k < GRID_SLOTS; k++) {
+      const slot = this.gridSlot(k);
+      const box = new THREE.Group();
+      const bar = flat(boxW, 0.01);
+      bar.position.z = front;
+      box.add(bar);
+      for (const sx of [-1, 1]) {
+        const leg = flat(0.008, legLen);
+        leg.position.set((sx * (boxW - 0.008)) / 2, 0, front - legLen / 2);
+        box.add(leg);
+      }
+      // Numero sul lato esterno della colonna (+X locale = lato con lane negativo)
+      const tex = canvasTex(
+        128,
+        128,
+        (g, w, h) => {
+          g.clearRect(0, 0, w, h);
+          g.fillStyle = '#ffffff';
+          g.font = 'bold 92px Arial, sans-serif';
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillText(String(k + 1), w / 2, h / 2 + 6);
+        },
+        { clamp: true }
+      );
+      const num = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.05, 0.05),
+        new THREE.MeshStandardMaterial({
+          map: tex,
+          transparent: true,
+          roughness: 0.75,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2
+        })
+      );
+      // Rz(π) poi Rx(-π/2): la parte alta delle cifre punta nel senso di marcia
+      num.rotation.set(-Math.PI / 2, 0, Math.PI);
+      num.position.set(-Math.sign(slot.lane) * (boxW / 2 + 0.035), 0, front - 0.02);
+      box.add(num);
+      place(box, slot.t, slot.lane);
+    }
+    this.trackGroup.add(group);
   }
 
   spawnAiCars() {
