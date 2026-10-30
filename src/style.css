@@ -31,8 +31,9 @@ body, html {
   height: 100%;
   display: block;
   z-index: 1;
-  /* Prima saturate(0.58): toglieva quasi metà del colore a tutta la scena 3D (auto, pista, sala) */
-  filter: saturate(0.92);
+  /* Nessun filtro CSS sul canvas WebGL (prima saturate(0.92)): obbliga il browser a ricomporre ogni fotogramma
+     in un passaggio in più e, su alcuni schermi/GPU, lasciava una scia chiara come vapore dietro le auto in
+     movimento, invisibile negli screenshot. Come in Slot-Car il colore arriva solo dal rendering 3D. */
 }
 
 .hidden {
