@@ -26,3 +26,10 @@ L'app si apre sulla schermata **Impostazioni gara** (`#race-setup-screen`, `show
 - Audio: ogni auto ha il suo motore con panner 3D (`SoundAndCommentary.createEngine`), l'ascoltatore è la telecamera.
 - Voce telecronista: nella scelta ci sono Alice (predefinita) e le altre voci femminili, più "Voce di Slot Car", la voce maschile scelta con la stessa regola di Slot-Car (`js/commentary.js`: voce italiana predefinita del sistema, poi locale, poi la prima; velocità 1,04). Le altre voci maschili sono escluse (`SoundAndCommentary.isMaleVoice`).
 - Vista dal palco: il campo visivo viene da Menu → scheda 5 "Schermo" (misura, formato, distanza, zoom), `getStandFov()` in `src/main.js`.
+
+## Accesso con codice e demo (dalla 1.7.0)
+
+Stesso sistema di unnerdemezzo/Slot-Car (`server/access.mjs`), adattato: `server/access.mjs` (logica, Redis REST), `api/access.js` (funzione Vercel), `middleware.js` + `server/access-middleware.mjs` (blocca tutto il sito tranne le pagine di accesso), `public/access.html` (`/access`, codice o "Prova la demo"), `public/admin.html` (`/admin`, genera/revoca codici con la password), `public/access-app/` (script e stile delle due pagine). Nel gioco: `src/access/access-gate.js` avvia `MiniZSimulatorApp` solo dopo `/api/access` e ricontrolla ogni minuto; `src/access/demo-mode.js` applica i limiti della demo (Circuito Club Veloce, Ferrari 499P, gara a tempo di 3 minuti, niente salvataggi).
+
+- Variabili Vercel: `MINIZ_ADMIN_PASSWORD` (almeno 20 caratteri, Sensitive), Redis Upstash (`KV_REST_API_URL`/`KV_REST_API_TOKEN`, oppure `UPSTASH_REDIS_REST_*` o `STORAGE_REST_API_*`), `MINIZ_ACCESS_ENABLED=1` per attivare il blocco. Senza `MINIZ_ACCESS_ENABLED` il gioco resta libero per tutti.
+- Codici `MZ-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX`, un solo browser ciascuno; chiavi Redis `miniz:{access-production|preview}:` (anteprime e produzione separate, nessun conflitto con Slot Car sullo stesso database).

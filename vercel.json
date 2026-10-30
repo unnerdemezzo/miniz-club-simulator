@@ -1,5 +1,23 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "framework": "vite"
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/access", "destination": "/access.html" },
+    { "source": "/access/", "destination": "/access.html" },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin/", "destination": "/admin.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(access|admin)(.html)?",
+      "headers": [
+        { "key": "Cache-Control", "value": "private, no-store" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    }
+  ],
+  "functions": {
+    "api/access.js": { "maxDuration": 30 }
+  }
 }
