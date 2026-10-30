@@ -26,11 +26,23 @@ import { CAR_BODIES } from '../data/parts.js';
 // Ingombro in pianta per i contatti: Mini-Z 17,2 cm x 8 cm (avversari scalati 1,16 nel modello 3D)
 const CAR_HALF_SEG = 0.05;
 const CAR_RADIUS = 0.04;
-// Griglia di partenza: file sfalsate a due a due, 30 cm tra una posizione e la successiva
-const GRID_ROW_GAP = 0.3;
+// Griglia di partenza stile F1 in scala Mini-Z: due colonne sfalsate, ogni posizione 24 cm dietro la precedente
+// (in F1 8 m per un'auto di 5,6 m, cioè 1,4 lunghezze: 17,2 cm x 1,4 ≈ 24 cm), 10 posizioni disegnate
+const GRID_SLOTS = 10;
+const GRID_ROW_GAP = 0.24;
 const GRID_LATERAL = 0.15;
+// Linea di partenza bianca 15 cm prima del traguardo a scacchi, piazzola della pole 4 cm dietro la linea
+const GRID_START_LINE = 0.15;
+const CAR_HALF_LENGTH = 0.086;
+const GRID_POLE_BEHIND = GRID_START_LINE + 0.04 + CAR_HALF_LENGTH + 0.015;
 
 const R = rng(21);
+
+// Sorpasso IA: distanza laterale minima perché due carrozzerie (larghe 2 * CAR_RADIUS) non si tocchino,
+// scarto laterale scelto per sfilare un'auto e tempo per cui la scelta resta valida
+const AI_CLEAR_LAT = CAR_RADIUS * 2 + 0.015;
+const AI_PASS_LAT = 0.17;
+const AI_PASS_HOLD = 0.6;
 
 export class ClubEnvironment {
   constructor(scene, renderer = null) {
@@ -800,11 +812,11 @@ export class ClubEnvironment {
     // 3b. Allestimento scenografico interno in scala 1:27 sul tappeto verde (cartelloni sponsor, box telemetria e gomme di protezione)
     this.buildInfieldScenery(this.curveSamples, laneHalf);
 
-    // 4. Posizione di partenza: la pole è sul rettilineo principale prima del ponte (dritta, in corsia)
-    const startIdx = (bridgeIdx - 28 + numSamples) % numSamples;
-    const startSample = this.curveSamples[startIdx];
-    this.gridStartT = this.nearestCurveT(startSample.pt);
+    // 4. Griglia di partenza sul rettilineo principale, subito dietro al traguardo sotto il ponte
     this.lapLineT = this.nearestCurveT(bridgeSample.pt);
+    this.gridStartT = this.curveTBehind(this.lapLineT, GRID_POLE_BEHIND);
+    this.gridPoleSide = this.firstCornerSide(this.lapLineT);
+    this.buildGridMarks(spec.laneWidth);
     const playerSlot = this.gridSlot(0);
 
     // 5. Crea / reimposta le 3 Auto Avversarie AI Mini-Z sulla griglia, dietro al giocatore
@@ -847,11 +859,61 @@ export class ClubEnvironment {
     return best;
   }
 
-  // Posizione k in griglia (0 = pole): file sfalsate, la pole a sinistra, la seconda a destra 30 cm dietro...
+  // Parametro t della curva d metri prima di t0 (a ritroso nel senso di marcia)
+  curveTBehind(t0, d) {
+    return (((t0 - d / this.totalTrackLength) % 1) + 1) % 1;
+  }
+
+  // Lato (+1 / -1 sul segno di lane) verso cui gira la prima curva dopo il traguardo: lì sta la pole,
+  // come in F1, così chi parte davanti ha la traiettoria ideale. Vale anche con la pista invertita.
+  firstCornerSide(t0) {
+    const L = this.totalTrackLength;
+    let prev = this.curve.getTangentAt(t0);
+    let turn = 0;
+    // Somma le variazioni di direzione dal traguardo in avanti finché la pista non ha girato di 30°
+    for (let d = 0.1; d < L * 0.5 && Math.abs(turn) < Math.PI / 6; d += 0.1) {
+      const tan = this.curve.getTangentAt((t0 + d / L) % 1);
+      // Segno concorde con lane: lane positivo = (-tan.z, tan.x)
+      turn += Math.atan2(prev.x * tan.z - prev.z * tan.x, prev.x * tan.x + prev.z * tan.z);
+      prev = tan;
+    }
+    return turn >= 0 ? 1 : -1;
+  }
+
+  // Parametro t (0..1) della linea ideale più vicino a (x, z), per la classifica in tempo reale.
+  // Con hintT cerca solo attorno all'ultimo valore noto (economico a ogni fotogramma).
+  trackT(x, z, hintT = null) {
+    if (!this.curve) return 0;
+    const n = 720;
+    if (this.progressCurve !== this.curve) {
+      this.progressCurve = this.curve;
+      this.progressPts = Array.from({ length: n }, (_, i) => this.curve.getPointAt(i / n));
+    }
+    const pts = this.progressPts;
+    const search = (from, count) => {
+      let best = 0;
+      let bestD = Infinity;
+      for (let k = 0; k < count; k++) {
+        const i = (((from + k) % n) + n) % n;
+        const d = (pts[i].x - x) ** 2 + (pts[i].z - z) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      return { best, bestD };
+    };
+    let r = hintT === null ? null : search(Math.round(hintT * n) - 40, 81);
+    if (!r || r.bestD > 0.09) r = search(0, n);
+    return r.best / n;
+  }
+
+  // Posizione k in griglia (0 = pole): due colonne sfalsate, la pole all'interno della prima curva,
+  // la seconda nell'altra colonna 24 cm dietro, e così via
   gridSlot(k) {
-    const trackLen = Math.max(12, this.totalTrackLength);
-    const t = (((this.gridStartT ?? 0) - (k * GRID_ROW_GAP) / trackLen) % 1 + 1) % 1;
-    const lane = k % 2 === 0 ? -GRID_LATERAL : GRID_LATERAL;
+    const t = this.curveTBehind(this.gridStartT ?? 0, k * GRID_ROW_GAP);
+    const side = this.gridPoleSide ?? -1;
+    const lane = (k % 2 === 0 ? side : -side) * GRID_LATERAL;
     const pt = this.curve.getPointAt(t);
     const tan = this.curve.getTangentAt(t).normalize();
     return {
@@ -861,6 +923,87 @@ export class ClubEnvironment {
       z: pt.z + tan.x * lane,
       heading: Math.atan2(tan.x, tan.z)
     };
+  }
+
+  // Segni di griglia dipinti sul tappeto: linea di partenza bianca e una staffa a U aperta dietro per ognuna
+  // delle GRID_SLOTS posizioni, col numero della posizione accanto (leggibile nel senso di marcia)
+  buildGridMarks(laneWidth) {
+    const group = new THREE.Group();
+    group.name = 'Griglia di partenza';
+    const paint = new THREE.MeshStandardMaterial({
+      color: 0xf4f4f0,
+      roughness: 0.75,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2
+    });
+    const y = 0.0093;
+    const flat = (w, d, mat = paint) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+      m.rotation.x = -Math.PI / 2;
+      m.receiveShadow = true;
+      return m;
+    };
+    const place = (obj, t, lane = 0) => {
+      const pt = this.curve.getPointAt(t);
+      const tan = this.curve.getTangentAt(t).normalize();
+      obj.position.set(pt.x - tan.z * lane, y, pt.z + tan.x * lane);
+      // +Z locale nel senso di marcia, come il ponte di cronometraggio
+      obj.rotation.y = Math.atan2(tan.x, tan.z);
+      group.add(obj);
+    };
+
+    const startLine = new THREE.Group();
+    startLine.add(flat(laneWidth - 0.02, 0.018));
+    place(startLine, this.curveTBehind(this.lapLineT, GRID_START_LINE));
+
+    const boxW = 0.12;
+    const legLen = 0.07;
+    const front = CAR_HALF_LENGTH + 0.015;
+    for (let k = 0; k < GRID_SLOTS; k++) {
+      const slot = this.gridSlot(k);
+      const box = new THREE.Group();
+      const bar = flat(boxW, 0.01);
+      bar.position.z = front;
+      box.add(bar);
+      for (const sx of [-1, 1]) {
+        const leg = flat(0.008, legLen);
+        leg.position.set((sx * (boxW - 0.008)) / 2, 0, front - legLen / 2);
+        box.add(leg);
+      }
+      // Numero sul lato esterno della colonna (+X locale = lato con lane negativo)
+      const tex = canvasTex(
+        128,
+        128,
+        (g, w, h) => {
+          g.clearRect(0, 0, w, h);
+          g.fillStyle = '#ffffff';
+          g.font = 'bold 92px Arial, sans-serif';
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillText(String(k + 1), w / 2, h / 2 + 6);
+        },
+        { clamp: true }
+      );
+      const num = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.05, 0.05),
+        new THREE.MeshStandardMaterial({
+          map: tex,
+          transparent: true,
+          roughness: 0.75,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2
+        })
+      );
+      // Rz(π) poi Rx(-π/2): la parte alta delle cifre punta nel senso di marcia
+      num.rotation.set(-Math.PI / 2, 0, Math.PI);
+      num.position.set(-Math.sign(slot.lane) * (boxW / 2 + 0.035), 0, front - 0.02);
+      box.add(num);
+      place(box, slot.t, slot.lane);
+    }
+    this.trackGroup.add(group);
   }
 
   spawnAiCars() {
@@ -888,6 +1031,12 @@ export class ClubEnvironment {
         laneOffset: slot.lane,
         targetLaneOffset: slot.lane,
         latVel: 0,
+        laneRate: 0,
+        steerYaw: 0,
+        passSide: 0,
+        passTarget: 0,
+        passHold: 0,
+        reverseTimer: 0,
         throttleEst: 0,
         x: 0,
         z: 0,
@@ -917,6 +1066,7 @@ export class ClubEnvironment {
     this.aiCars.forEach((ai, idx) => {
       const spec = aiBodies[idx % aiBodies.length];
       if (!spec) return;
+      ai.bodyName = spec.name;
       this.loadAiBodyScene(spec.glbUrl).then((gltfScene) => {
         if (!this.aiCars.includes(ai)) return;
         const clone = prepareHypercarBody(gltfScene.clone(true), { keepAllParts: spec.category === 'gt3' });
@@ -1666,26 +1816,69 @@ export class ClubEnvironment {
         }
 
         // Traffico: un'auto davanti nella stessa traiettoria (giocatore o altro avversario) va superata
-        // spostandosi di lato, oppure seguita alzando il gas, non tamponata alla cieca
-        const fwdX = tanNow.x, fwdZ = tanNow.z;
-        const fLen = Math.hypot(fwdX, fwdZ) || 1;
-        const ux = fwdX / fLen, uz = fwdZ / fLen;
-        const others = this.aiCars.filter((o) => o !== ai).map((o) => ({ x: o.x, z: o.z, vx: o.fx * o.speed, vz: o.fz * o.speed }));
-        if (this.playerBody?.active) others.push(this.playerBody);
+        // spostandosi di lato, oppure seguita alzando il gas, non tamponata alla cieca.
+        // Distanze misurate lungo la pista (metri di tracciato e scarto in corsia), così anche in curva
+        // l'IA sa se un'auto è davvero sulla sua linea. Si rallenta solo per chi lo è: un'auto già
+        // affiancata o sfilata di lato non frena più chi la sta passando.
+        const others = this.aiCars.filter((o) => o !== ai).map((o) => ({ t: o.t, lane: o.laneOffset, speed: o.speed }));
+        if (this.playerBody?.active) others.push(this.trackCoordsNear(this.playerBody, ai.t, trackLen));
+        const bumperGap = 2 * (CAR_HALF_SEG + CAR_RADIUS);
+        // Un pilota vede il traffico prima di arrivarci: più si va forte, più lontano si guarda (≈ 0,4 s)
+        const lookTraffic = 0.4 + ai.speed * 0.4;
+        const freeSpeed = targetSpeed;
+        let passGap = Infinity;
+        const alongside = [];
         for (const o of others) {
-          const dx = o.x - ai.x;
-          const dz = o.z - ai.z;
-          const along = dx * ux + dz * uz;
-          const lat = dx * -uz + dz * ux;
-          if (along < 0.04 || along > 0.5 || Math.abs(lat) > 0.13) continue;
-          const oSpeed = o.vx * ux + o.vz * uz;
-          targetSpeed = Math.min(targetSpeed, Math.max(0, oSpeed + (along - 0.24) * 4));
-          if (ai.errorState === 'none') {
-            const oLane = ai.laneOffset + lat;
-            let side = lat >= 0 ? -1 : 1;
-            if (Math.abs(oLane + side * 0.17) > maxSafeOffset) side = -side;
-            ai.targetLaneOffset = clamp(oLane + side * 0.17, -maxSafeOffset, maxSafeOffset);
+          const along = ((((o.t - ai.t) % 1) + 1.5) % 1 - 0.5) * trackLen;
+          const lat = o.lane - ai.laneOffset;
+          // Zona in cui l'auto conta: davanti fin dove si guarda e ancora accanto finché non è passata
+          if (along < -bumperGap || along > lookTraffic || Math.abs(lat) > AI_PASS_LAT + 0.05) continue;
+          if (Math.abs(along) < bumperGap + 0.03) alongside.push(lat);
+          // Più lenta di noi (o ferma) sulla nostra linea: si sceglie un lato e lo si tiene finché non la si è
+          // superata; un'auto che va al nostro passo non fa cambiare traiettoria
+          const blocking = along > 0.04 && Math.abs(lat) < AI_CLEAR_LAT + 0.03 && o.speed < Math.max(ai.speed, freeSpeed) - 0.2;
+          if (ai.errorState === 'none' && (blocking || (ai.passHold > 0 && along > -bumperGap))) {
+            let side = ai.passHold > 0 && ai.passSide ? ai.passSide : lat >= 0 ? -1 : 1;
+            if (Math.abs(o.lane + side * AI_PASS_LAT) > maxSafeOffset) side = -side;
+            ai.passSide = side;
+            ai.passTarget = clamp(o.lane + side * AI_PASS_LAT, -maxSafeOffset, maxSafeOffset);
+            ai.passHold = AI_PASS_HOLD;
           }
+          if (along > 0.04 && Math.abs(lat) < AI_CLEAR_LAT) {
+            const gap = Math.max(0, along - bumperGap - 0.02);
+            passGap = Math.min(passGap, gap);
+            // Se sta già sfilando di lato e lo spazio basta per uscire dalla scia sterzando, non serve frenare
+            const steeringOut = ai.passHold > 0 && ai.passSide * lat < 0;
+            const needGap = (AI_CLEAR_LAT - Math.abs(lat)) / 0.36 + 0.03;
+            if (steeringOut && gap > needGap) continue;
+            // Velocità da cui ci si ferma nello spazio libero frenando al 70%: si rallenta quanto basta, non di colpo
+            const closing = Math.min(Math.sqrt(2 * levelParams.brake * 0.7 * gap), gap * 3);
+            targetSpeed = Math.min(targetSpeed, Math.max(0, o.speed) + closing);
+          }
+        }
+        // Ferma dietro a chi deve sfilare: avanza piano sterzando, come farebbe un pilota, finché c'è spazio
+        if (ai.passHold > 0 && passGap > 0.015 && passGap < Infinity) targetSpeed = Math.max(targetSpeed, Math.min(0.35, freeSpeed));
+        // Muso contro il posteriore di un'auto ferma: fa qualche centimetro di retromarcia per avere lo spazio
+        // di sterzare fuori, invece di scivolare di lato da fermo
+        if (ai.reverseTimer > 0) {
+          ai.reverseTimer -= dt;
+          targetSpeed = -0.4;
+        } else if (dt > 0 && ai.errorState === 'none' && ai.passHold > 0 && passGap < 0.015 && ai.speed < 0.1) {
+          ai.reverseTimer = 0.5;
+          targetSpeed = -0.4;
+        }
+        if (ai.passHold > 0) {
+          ai.passHold -= dt;
+          if (ai.errorState === 'none') ai.targetLaneOffset = ai.passTarget;
+          if (ai.passHold <= 0) ai.passSide = 0;
+        }
+        // Ruota a ruota non si stringe chi è affiancato: si lascia almeno lo spazio di una carrozzeria
+        for (const lat of alongside) {
+          const oLane = ai.laneOffset + lat;
+          const room = AI_CLEAR_LAT + 0.025;
+          if (lat > 0) ai.targetLaneOffset = Math.min(ai.targetLaneOffset, oLane - room);
+          else ai.targetLaneOffset = Math.max(ai.targetLaneOffset, oLane + room);
+          ai.targetLaneOffset = clamp(ai.targetLaneOffset, -maxSafeOffset, maxSafeOffset);
         }
 
         // Rispetta i veri limiti fisici di accelerazione e frenata (mai variazioni istantanee!)
@@ -1701,7 +1894,7 @@ export class ClubEnvironment {
         ai.throttleEst += (thrTarget - ai.throttleEst) * Math.min(1, dt * 8);
 
         const prevT = ai.t;
-        ai.t = (ai.t + (ai.speed * dt) / trackLen) % 1;
+        ai.t = (((ai.t + (ai.speed * dt) / trackLen) % 1) + 1) % 1;
         ai.lapTime += dt;
         // Il giro si conta passando sotto il ponte di cronometraggio, come per il giocatore
         const lineT = this.lapLineT ?? 0;
@@ -1715,9 +1908,21 @@ export class ClubEnvironment {
           ai.lapTime = 0;
         }
 
-        // Spostamento laterale fluido in corsia (e scarto rapido quando commette un errore)
+        // Spostamento laterale in corsia guidato dallo sterzo (scarto più rapido quando commette un errore):
+        // un'auto si sposta di lato solo avanzando, con un angolo di sterzo limitato, e il muso segue la direzione
+        // di marcia. Così il sorpasso e il rientro in traiettoria sono curve morbide, non scivolate di fianco.
         const latRate = ai.errorState === 'none' ? 2.8 : 4.2;
-        ai.laneOffset += (ai.targetLaneOffset - ai.laneOffset) * Math.min(1, dt * latRate);
+        const maxLatSpeed = ai.speed < 0 ? 0 : Math.max(0.05, ai.speed * (ai.errorState === 'none' ? 0.36 : 0.55));
+        const wantRate = clamp((ai.targetLaneOffset - ai.laneOffset) * latRate, -maxLatSpeed, maxLatSpeed);
+        ai.laneRate += (wantRate - ai.laneRate) * Math.min(1, dt * 6);
+        ai.laneRate = clamp(ai.laneRate, -maxLatSpeed, maxLatSpeed);
+        ai.laneOffset += ai.laneRate * dt;
+        if (Math.abs(ai.laneOffset) > maxSafeOffset) {
+          ai.laneOffset = clamp(ai.laneOffset, -maxSafeOffset, maxSafeOffset);
+          ai.laneRate = 0;
+        }
+        const targetSteerYaw = clamp(-Math.atan2(ai.laneRate, Math.max(0.3, ai.speed)), -0.45, 0.45);
+        ai.steerYaw += (targetSteerYaw - ai.steerYaw) * Math.min(1, dt * 10);
         // Spinta laterale ricevuta in un contatto: si smorza con l'aderenza delle gomme
         ai.laneOffset = clamp(ai.laneOffset + ai.latVel * dt, -maxSafeOffset, maxSafeOffset);
         ai.latVel *= Math.exp(-dt * 7);
@@ -1745,12 +1950,41 @@ export class ClubEnvironment {
     }
   }
 
+  // Posizione in coordinate di pista (t, scarto in corsia, velocità lungo la pista) di un'auto libera
+  // come quella del giocatore, cercata entro ±2 m dal punto tGuess
+  trackCoordsNear(body, tGuess, trackLen) {
+    const span = 2 / trackLen;
+    let best = tGuess;
+    let bestD = Infinity;
+    for (let step = span / 40, from = tGuess - span, to = tGuess + span, pass = 0; pass < 2; pass++) {
+      for (let t = from; t <= to; t += step) {
+        const q = this.curve.getPointAt(((t % 1) + 1) % 1);
+        const d = (q.x - body.x) ** 2 + (q.z - body.z) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = t;
+        }
+      }
+      from = best - step;
+      to = best + step;
+      step /= 10;
+    }
+    const t = ((best % 1) + 1) % 1;
+    const pt = this.curve.getPointAt(t);
+    const tan = this.curve.getTangentAt(t).normalize();
+    return {
+      t,
+      lane: (body.x - pt.x) * -tan.z + (body.z - pt.z) * tan.x,
+      speed: body.vx * tan.x + body.vz * tan.z
+    };
+  }
+
   placeAiCar(ai) {
     const pt = this.curve.getPointAt(ai.t);
     const tan = this.curve.getTangentAt(ai.t).normalize();
     ai.x = pt.x - tan.z * ai.laneOffset;
     ai.z = pt.z + tan.x * ai.laneOffset;
-    const yaw = ai.yawSlip + (ai.yawKick || 0);
+    const yaw = ai.yawSlip + (ai.yawKick || 0) + (ai.steerYaw || 0);
     // Direzione del muso nel piano (yaw positivo = come l'heading del giocatore)
     const h = Math.atan2(tan.x, tan.z) + yaw;
     ai.fx = Math.sin(h);
@@ -1810,10 +2044,12 @@ export class ClubEnvironment {
           z: ai.z,
           fx: ai.fx,
           fz: ai.fz,
-          vx: tan.x * ai.speed + nx * ai.latVel,
-          vz: tan.z * ai.speed + nz * ai.latVel,
-          halfSeg: CAR_HALF_SEG * 1.1,
-          radius: CAR_RADIUS * 1.05,
+          vx: tan.x * ai.speed + nx * (ai.latVel + ai.laneRate),
+          vz: tan.z * ai.speed + nz * (ai.latVel + ai.laneRate),
+          // Stessa sagoma del giocatore: i modelli IA sono scalati alla stessa lunghezza reale (17,2 cm),
+          // quindi il contatto scatta solo quando le carrozzerie si toccano davvero
+          halfSeg: CAR_HALF_SEG,
+          radius: CAR_RADIUS,
           push(dx, dz) {
             ai.t = (((ai.t + (dx * tan.x + dz * tan.z) / trackLen) % 1) + 1) % 1;
             ai.laneOffset = clamp(ai.laneOffset + dx * nx + dz * nz, -maxSafeOffset, maxSafeOffset);
